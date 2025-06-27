@@ -19,7 +19,6 @@ from typing import Optional, List
 from pathlib import Path
 from pydantic import BaseModel, Field, validator
 from dotenv import load_dotenv
-import yaml
 
 
 class OpenAIConfig(BaseModel):
@@ -67,22 +66,6 @@ class SystemConfig(BaseModel):
         return v.upper()
 
 
-class AgentConfig(BaseModel):
-    """Configuration for specialized agents."""
-    implementation_agent_prompt_template: str = Field(
-        default="agent_prompts.yaml",
-        description="Path to implementation agent prompt templates"
-    )
-    debugging_agent_prompt_template: str = Field(
-        default="agent_prompts.yaml",
-        description="Path to debugging agent prompt templates"
-    )
-    orchestrator_prompt_template: str = Field(
-        default="agent_prompts.yaml",
-        description="Path to orchestrator prompt templates"
-    )
-
-
 class EvaluationConfig(BaseModel):
     """Configuration for evaluation and metrics."""
     dataset_path: str = Field(default="./data/cs1qa/processed", description="Path to evaluation dataset")
@@ -106,7 +89,6 @@ class Settings(BaseModel):
     openai: OpenAIConfig
     chroma: ChromaConfig
     system: SystemConfig
-    agents: AgentConfig
     evaluation: EvaluationConfig
     
     class Config:
@@ -150,7 +132,6 @@ class Settings(BaseModel):
                     request_timeout=int(os.getenv('REQUEST_TIMEOUT', '30')),
                     classification_confidence_threshold=float(os.getenv('CLASSIFICATION_CONFIDENCE_THRESHOLD', '0.7'))
                 ),
-                agents=AgentConfig(),
                 evaluation=EvaluationConfig(
                     dataset_path=os.getenv('EVALUATION_DATASET_PATH', './data/cs1qa/processed'),
                     results_output_dir=os.getenv('RESULTS_OUTPUT_DIR', './evaluation/results')
@@ -212,42 +193,6 @@ def get_settings(reload: bool = False) -> Settings:
             raise RuntimeError(f"System validation failed:\n" + "\n".join(f"- {error}" for error in errors))
     
     return _settings
-
-
-def load_prompt_templates(template_file: str = "prompts.yaml") -> dict:
-    """
-    Load prompt templates from YAML file.
-    
-    Args:
-        template_file: Path to YAML file containing prompt templates
-        
-    Returns:
-        Dictionary of prompt templates
-    """
-    template_path = Path(__file__).parent / template_file
-    
-    if not template_path.exists():
-        # Return default templates if file doesn't exist
-        return {
-            "orchestrator": {
-                "classification": "You are an expert educational AI that routes programming queries...",
-                "system": "You coordinate between specialized agents..."
-            },
-            "implementation_agent": {
-                "system": "You are a programming implementation specialist...",
-                "forethought_phase": "Help students plan and strategize their coding approach..."
-            },
-            "debugging_agent": {
-                "system": "You are a debugging specialist...",
-                "performance_phase": "Help students systematically debug and resolve code issues..."
-            }
-        }
-    
-    try:
-        with open(template_path, 'r', encoding='utf-8') as f:
-            return yaml.safe_load(f)
-    except Exception as e:
-        raise RuntimeError(f"Failed to load prompt templates from {template_path}: {str(e)}")
 
 
 if __name__ == "__main__":

@@ -33,7 +33,7 @@ import json
 
 from pydantic import BaseModel, Field
 
-from ..config.settings import get_settings, load_prompt_templates
+from ..config.settings import get_settings
 from ..utils.logging_utils import get_logger, LogContext, EventType, create_context
 from ..utils.api_utils import get_openai_client, APIResponse, OpenAIClient
 
@@ -136,9 +136,6 @@ class BaseAgent(ABC):
         self.openai_client = openai_client or get_openai_client()
         self.rag_system = rag_system
         self.enable_rag = enable_rag
-        
-        # Load prompt templates for this agent type
-        self.prompt_templates = load_prompt_templates()
         
         # Performance tracking
         self.interaction_count = 0
