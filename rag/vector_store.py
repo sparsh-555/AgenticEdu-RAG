@@ -1,23 +1,23 @@
 """
-Vector Store Implementation for Educational RAG System
+Unified Vector Store Implementation for Educational RAG System
 
-This module provides a robust abstraction layer for vector database operations
-using ChromaDB, optimized for educational content storage and retrieval. The
-implementation supports specialized educational metadata, agent-specific
-collections, and efficient similarity search for programming education.
+This module provides a unified vector database abstraction using ChromaDB,
+optimized for educational content storage and retrieval. The implementation
+uses a single collection with rich metadata for intelligent content filtering
+rather than separate agent-specific collections.
 
 Key Features:
-1. Educational Content Vectorization: Optimized for programming concepts and code
-2. Agent-Specific Collections: Separate collections for different agent specializations
-3. Metadata Management: Rich metadata for educational research and optimization
-4. Efficient Retrieval: Fast similarity search with filtering capabilities
+1. Unified Collection: Single collection with comprehensive metadata tagging
+2. Rich Metadata Filtering: Context-aware retrieval using metadata filters
+3. Educational Content Optimization: Specialized for programming education
+4. Performance Optimization: Efficient similarity search with smart caching
 5. Content Management: Adding, updating, and removing educational content
-6. Performance Monitoring: Query performance and optimization metrics
+6. Quality Monitoring: Performance metrics and educational effectiveness tracking
 
 Design Principles:
+- Unified Architecture: Single source of truth for all educational content
+- Metadata-Driven: Rich metadata enables intelligent content filtering
 - Educational Focus: Optimized for programming education use cases
-- Agent Awareness: Support for multi-agent content specialization
-- Research Support: Comprehensive metadata for educational research
 - Performance: Efficient operations for real-time query processing
 - Scalability: Support for large educational content collections
 """
@@ -57,7 +57,7 @@ class ContentType(Enum):
 
 
 class AgentSpecialization(Enum):
-    """Agent specializations for content organization."""
+    """Agent specializations for content tagging."""
     IMPLEMENTATION = "implementation"
     DEBUGGING = "debugging"
     SHARED = "shared"
@@ -65,7 +65,7 @@ class AgentSpecialization(Enum):
 
 @dataclass
 class ContentMetadata:
-    """Metadata for educational content pieces."""
+    """Comprehensive metadata for educational content pieces."""
     content_id: str
     content_type: ContentType
     agent_specialization: AgentSpecialization
@@ -136,7 +136,7 @@ class ContentMetadata:
 
 
 class RetrievalResult(BaseModel):
-    """Result from vector store retrieval."""
+    """Result from unified vector store retrieval."""
     content_id: str = Field(..., description="Unique content identifier")
     content: str = Field(..., description="Retrieved content text")
     similarity_score: float = Field(..., description="Similarity score")
@@ -150,26 +150,28 @@ class RetrievalResult(BaseModel):
 
 
 class VectorStoreStats(BaseModel):
-    """Statistics for vector store performance monitoring."""
+    """Statistics for unified vector store performance monitoring."""
     total_documents: int = Field(default=0, description="Total documents stored")
-    collection_counts: Dict[str, int] = Field(default_factory=dict, description="Documents per collection")
+    content_by_type: Dict[str, int] = Field(default_factory=dict, description="Documents by content type")
+    content_by_agent: Dict[str, int] = Field(default_factory=dict, description="Documents by agent specialization")
+    content_by_difficulty: Dict[str, int] = Field(default_factory=dict, description="Documents by difficulty level")
     total_queries: int = Field(default=0, description="Total queries processed")
     average_query_time_ms: float = Field(default=0.0, description="Average query processing time")
     cache_hit_rate: float = Field(default=0.0, description="Cache hit rate for queries")
     storage_size_mb: float = Field(default=0.0, description="Estimated storage size")
 
 
-class EducationalVectorStore:
+class UnifiedEducationalVectorStore:
     """
-    Educational vector store for programming content using ChromaDB.
+    Unified vector store for educational content using ChromaDB.
     
-    This implementation provides specialized vector operations for educational
-    content, with support for agent-specific collections, educational metadata,
-    and optimized retrieval for programming education use cases.
+    This implementation uses a single collection with rich metadata for
+    intelligent content filtering, replacing the previous agent-specific
+    collection architecture with a more flexible and maintainable approach.
     """
     
     def __init__(self):
-        """Initialize the educational vector store."""
+        """Initialize the unified educational vector store."""
         self.settings = get_settings()
         self.logger = get_logger()
         self.openai_client = get_openai_client()
@@ -177,9 +179,9 @@ class EducationalVectorStore:
         # Initialize ChromaDB client
         self._initialize_chroma_client()
         
-        # Collections for different agent specializations
-        self.collections = {}
-        self._initialize_collections()
+        # Single unified collection
+        self.collection = None
+        self._initialize_collection()
         
         # Performance tracking
         self.query_count = 0
@@ -192,7 +194,7 @@ class EducationalVectorStore:
         
         self.logger.log_event(
             EventType.COMPONENT_INIT,
-            "Educational vector store initialized",
+            "Unified educational vector store initialized",
             extra_data={
                 "persist_directory": self.settings.chroma.persist_directory,
                 "collection_name": self.settings.chroma.collection_name
@@ -229,56 +231,41 @@ class EducationalVectorStore:
             )
             raise RuntimeError(f"ChromaDB initialization failed: {str(e)}")
     
-    def _initialize_collections(self):
-        """Initialize collections for different agent specializations."""
-        collection_configs = {
-            "implementation": {
-                "name": f"{self.settings.chroma.collection_name}_implementation",
-                "specialization": AgentSpecialization.IMPLEMENTATION,
-                "description": "Implementation guidance and forethought phase content"
-            },
-            "debugging": {
-                "name": f"{self.settings.chroma.collection_name}_debugging",
-                "specialization": AgentSpecialization.DEBUGGING,
-                "description": "Debugging resources and performance phase content"
-            },
-            "shared": {
-                "name": f"{self.settings.chroma.collection_name}_shared",
-                "specialization": AgentSpecialization.SHARED,
-                "description": "General programming content shared across agents"
-            }
-        }
-        
-        for collection_key, config in collection_configs.items():
-            try:
-                # Create or get collection
-                collection = self.chroma_client.get_or_create_collection(
-                    name=config["name"],
-                    metadata={"specialization": config["specialization"].value}
-                )
-                
-                self.collections[collection_key] = collection
-                
-                self.logger.log_event(
-                    EventType.COMPONENT_INIT,
-                    f"Collection '{config['name']}' initialized",
-                    extra_data={"specialization": config["specialization"].value}
-                )
-                
-            except Exception as e:
-                self.logger.log_event(
-                    EventType.ERROR_OCCURRED,
-                    f"Failed to initialize collection '{config['name']}': {str(e)}",
-                    level="ERROR"
-                )
-                raise
+    def _initialize_collection(self):
+        """Initialize single unified collection for all educational content."""
+        try:
+            collection_name = self.settings.chroma.collection_name
+            
+            # Create or get unified collection
+            self.collection = self.chroma_client.get_or_create_collection(
+                name=collection_name,
+                metadata={
+                    "description": "Unified educational content collection",
+                    "architecture": "unified_with_metadata_filtering",
+                    "created_at": time.time()
+                }
+            )
+            
+            self.logger.log_event(
+                EventType.COMPONENT_INIT,
+                f"Unified collection '{collection_name}' initialized",
+                extra_data={"collection_name": collection_name}
+            )
+            
+        except Exception as e:
+            self.logger.log_event(
+                EventType.ERROR_OCCURRED,
+                f"Failed to initialize unified collection: {str(e)}",
+                level="ERROR"
+            )
+            raise
     
     def add_content(self, 
                    content: str,
                    metadata: ContentMetadata,
                    context: Optional[LogContext] = None) -> bool:
         """
-        Add educational content to the appropriate collection.
+        Add educational content to the unified collection.
         
         Args:
             content: Text content to store
@@ -292,10 +279,6 @@ class EducationalVectorStore:
         start_time = time.time()
         
         try:
-            # Determine target collection
-            collection_key = self._get_collection_key(metadata.agent_specialization)
-            collection = self.collections[collection_key]
-            
             # Generate embedding for content
             embedding = self._generate_embedding(content)
             
@@ -303,8 +286,8 @@ class EducationalVectorStore:
             document_id = metadata.content_id
             document_metadata = metadata.to_dict()
             
-            # Add to collection
-            collection.add(
+            # Add to unified collection
+            self.collection.add(
                 documents=[content],
                 embeddings=[embedding],
                 metadatas=[document_metadata],
@@ -315,14 +298,14 @@ class EducationalVectorStore:
             
             self.logger.log_event(
                 EventType.KNOWLEDGE_RETRIEVED,
-                f"Content added to {collection_key} collection",
+                f"Content added to unified collection",
                 context=context,
                 extra_data={
                     "content_id": document_id,
                     "content_type": metadata.content_type.value,
+                    "agent_specialization": metadata.agent_specialization.value,
                     "content_length": len(content),
-                    "processing_time_ms": processing_time,
-                    "collection": collection_key
+                    "processing_time_ms": processing_time
                 }
             )
             
@@ -343,17 +326,19 @@ class EducationalVectorStore:
                              agent_specialization: Optional[AgentSpecialization] = None,
                              content_type_filter: Optional[ContentType] = None,
                              difficulty_level: Optional[str] = None,
+                             programming_concepts: Optional[List[str]] = None,
                              max_results: int = 5,
                              similarity_threshold: float = 0.0,
                              context: Optional[LogContext] = None) -> List[RetrievalResult]:
         """
-        Search for similar educational content.
+        Search for similar educational content using unified collection with metadata filtering.
         
         Args:
             query: Search query
             agent_specialization: Filter by agent specialization
             content_type_filter: Filter by content type
             difficulty_level: Filter by difficulty level
+            programming_concepts: Filter by programming concepts
             max_results: Maximum number of results to return
             similarity_threshold: Minimum similarity score
             context: Logging context
@@ -367,7 +352,7 @@ class EducationalVectorStore:
         # Check cache first
         cache_key = self._generate_cache_key(
             query, agent_specialization, content_type_filter, 
-            difficulty_level, max_results, similarity_threshold
+            difficulty_level, programming_concepts, max_results, similarity_threshold
         )
         
         with self.cache_lock:
@@ -388,36 +373,26 @@ class EducationalVectorStore:
             # Generate query embedding
             query_embedding = self._generate_embedding(query)
             
-            # Determine collections to search
-            collections_to_search = self._get_search_collections(agent_specialization)
+            # Build metadata filter for unified collection
+            where_filter = self._build_unified_metadata_filter(
+                agent_specialization, content_type_filter, difficulty_level, programming_concepts
+            )
             
-            all_results = []
+            # Perform similarity search on unified collection
+            results = self.collection.query(
+                query_embeddings=[query_embedding],
+                n_results=max_results * 2,  # Get more to filter and rank
+                where=where_filter if where_filter else None
+            )
             
-            # Search each relevant collection
-            for collection_key in collections_to_search:
-                collection = self.collections[collection_key]
-                
-                # Build metadata filter
-                where_filter = self._build_metadata_filter(
-                    content_type_filter, difficulty_level
-                )
-                
-                # Perform similarity search
-                results = collection.query(
-                    query_embeddings=[query_embedding],
-                    n_results=max_results * 2,  # Get more to filter and rank
-                    where=where_filter if where_filter else None
-                )
-                
-                # Process results
-                collection_results = self._process_search_results(
-                    results, similarity_threshold, collection_key
-                )
-                all_results.extend(collection_results)
+            # Process results
+            processed_results = self._process_unified_search_results(
+                results, similarity_threshold
+            )
             
             # Sort by similarity and limit results
-            all_results.sort(key=lambda x: x.similarity_score, reverse=True)
-            final_results = all_results[:max_results]
+            processed_results.sort(key=lambda x: x.similarity_score, reverse=True)
+            final_results = processed_results[:max_results]
             
             # Update usage statistics
             self._update_content_usage_stats(final_results)
@@ -438,7 +413,7 @@ class EducationalVectorStore:
             self.total_query_time += processing_time
             
             self.logger.log_rag_operation(
-                operation="similarity_search",
+                operation="unified_similarity_search",
                 query=query,
                 results_count=len(final_results),
                 context=context
@@ -446,11 +421,16 @@ class EducationalVectorStore:
             
             self.logger.log_event(
                 EventType.KNOWLEDGE_RETRIEVED,
-                f"Similarity search completed: {len(final_results)} results",
+                f"Unified search completed: {len(final_results)} results",
                 context=context,
                 extra_data={
                     "processing_time_ms": processing_time,
-                    "collections_searched": collections_to_search,
+                    "filters_applied": {
+                        "agent_specialization": agent_specialization.value if agent_specialization else None,
+                        "content_type": content_type_filter.value if content_type_filter else None,
+                        "difficulty_level": difficulty_level,
+                        "programming_concepts": programming_concepts
+                    },
                     "similarity_threshold": similarity_threshold,
                     "max_results": max_results
                 }
@@ -461,7 +441,7 @@ class EducationalVectorStore:
         except Exception as e:
             self.logger.log_event(
                 EventType.ERROR_OCCURRED,
-                f"Similarity search failed: {str(e)}",
+                f"Unified similarity search failed: {str(e)}",
                 context=context,
                 level="ERROR",
                 extra_data={"query_preview": query[:100]}
@@ -474,7 +454,7 @@ class EducationalVectorStore:
                       new_metadata: Optional[ContentMetadata] = None,
                       context: Optional[LogContext] = None) -> bool:
         """
-        Update existing content.
+        Update existing content in unified collection.
         
         Args:
             content_id: ID of content to update
@@ -488,46 +468,10 @@ class EducationalVectorStore:
         context = context or create_context()
         
         try:
-            # Find content in collections
-            content_found = False
+            # Check if content exists in unified collection
+            existing = self.collection.get(ids=[content_id])
             
-            for collection_key, collection in self.collections.items():
-                try:
-                    # Check if content exists in this collection
-                    existing = collection.get(ids=[content_id])
-                    
-                    if existing['ids']:
-                        # Content found, update it
-                        update_data = {}
-                        
-                        if new_content:
-                            update_data['documents'] = [new_content]
-                            update_data['embeddings'] = [self._generate_embedding(new_content)]
-                        
-                        if new_metadata:
-                            new_metadata.updated_timestamp = time.time()
-                            update_data['metadatas'] = [new_metadata.to_dict()]
-                        
-                        if update_data:
-                            collection.update(
-                                ids=[content_id],
-                                **update_data
-                            )
-                        
-                        content_found = True
-                        
-                        self.logger.log_event(
-                            EventType.KNOWLEDGE_RETRIEVED,
-                            f"Content updated in {collection_key} collection",
-                            context=context,
-                            extra_data={"content_id": content_id}
-                        )
-                        break
-                        
-                except Exception:
-                    continue  # Content not in this collection
-            
-            if not content_found:
+            if not existing['ids']:
                 self.logger.log_event(
                     EventType.WARNING_ISSUED,
                     f"Content not found for update: {content_id}",
@@ -536,9 +480,33 @@ class EducationalVectorStore:
                 )
                 return False
             
+            # Prepare update data
+            update_data = {}
+            
+            if new_content:
+                update_data['documents'] = [new_content]
+                update_data['embeddings'] = [self._generate_embedding(new_content)]
+            
+            if new_metadata:
+                new_metadata.updated_timestamp = time.time()
+                update_data['metadatas'] = [new_metadata.to_dict()]
+            
+            if update_data:
+                self.collection.update(
+                    ids=[content_id],
+                    **update_data
+                )
+            
             # Clear cache to ensure consistency
             with self.cache_lock:
                 self.query_cache.clear()
+            
+            self.logger.log_event(
+                EventType.KNOWLEDGE_RETRIEVED,
+                f"Content updated in unified collection",
+                context=context,
+                extra_data={"content_id": content_id}
+            )
             
             return True
             
@@ -554,7 +522,7 @@ class EducationalVectorStore:
     
     def delete_content(self, content_id: str, context: Optional[LogContext] = None) -> bool:
         """
-        Delete content from the vector store.
+        Delete content from the unified collection.
         
         Args:
             content_id: ID of content to delete
@@ -566,36 +534,10 @@ class EducationalVectorStore:
         context = context or create_context()
         
         try:
-            content_deleted = False
+            # Check if content exists
+            existing = self.collection.get(ids=[content_id])
             
-            # Search all collections for the content
-            for collection_key, collection in self.collections.items():
-                try:
-                    # Check if content exists
-                    existing = collection.get(ids=[content_id])
-                    
-                    if existing['ids']:
-                        # Delete the content
-                        collection.delete(ids=[content_id])
-                        content_deleted = True
-                        
-                        self.logger.log_event(
-                            EventType.KNOWLEDGE_RETRIEVED,
-                            f"Content deleted from {collection_key} collection",
-                            context=context,
-                            extra_data={"content_id": content_id}
-                        )
-                        break
-                        
-                except Exception:
-                    continue  # Content not in this collection
-            
-            if content_deleted:
-                # Clear cache
-                with self.cache_lock:
-                    self.query_cache.clear()
-                return True
-            else:
+            if not existing['ids']:
                 self.logger.log_event(
                     EventType.WARNING_ISSUED,
                     f"Content not found for deletion: {content_id}",
@@ -603,6 +545,22 @@ class EducationalVectorStore:
                     level="WARNING"
                 )
                 return False
+            
+            # Delete the content
+            self.collection.delete(ids=[content_id])
+            
+            # Clear cache
+            with self.cache_lock:
+                self.query_cache.clear()
+            
+            self.logger.log_event(
+                EventType.KNOWLEDGE_RETRIEVED,
+                f"Content deleted from unified collection",
+                context=context,
+                extra_data={"content_id": content_id}
+            )
+            
+            return True
                 
         except Exception as e:
             self.logger.log_event(
@@ -616,23 +574,35 @@ class EducationalVectorStore:
     
     def get_vector_store_stats(self) -> VectorStoreStats:
         """
-        Get comprehensive vector store statistics.
+        Get comprehensive unified vector store statistics.
         
         Returns:
             Vector store statistics
         """
         try:
-            total_documents = 0
-            collection_counts = {}
+            total_documents = self.collection.count()
             
-            # Count documents in each collection
-            for collection_key, collection in self.collections.items():
-                try:
-                    count = collection.count()
-                    collection_counts[collection_key] = count
-                    total_documents += count
-                except Exception:
-                    collection_counts[collection_key] = 0
+            # Get all documents to analyze metadata distribution
+            all_docs = self.collection.get(include=['metadatas'])
+            metadatas = all_docs.get('metadatas', [])
+            
+            # Analyze content distribution
+            content_by_type = {}
+            content_by_agent = {}
+            content_by_difficulty = {}
+            
+            for metadata in metadatas:
+                # Content type distribution
+                content_type = metadata.get('content_type', 'unknown')
+                content_by_type[content_type] = content_by_type.get(content_type, 0) + 1
+                
+                # Agent specialization distribution
+                agent_spec = metadata.get('agent_specialization', 'unknown')
+                content_by_agent[agent_spec] = content_by_agent.get(agent_spec, 0) + 1
+                
+                # Difficulty level distribution
+                difficulty = metadata.get('difficulty_level', 'unknown')
+                content_by_difficulty[difficulty] = content_by_difficulty.get(difficulty, 0) + 1
             
             # Calculate average query time
             avg_query_time = (
@@ -648,7 +618,9 @@ class EducationalVectorStore:
             
             return VectorStoreStats(
                 total_documents=total_documents,
-                collection_counts=collection_counts,
+                content_by_type=content_by_type,
+                content_by_agent=content_by_agent,
+                content_by_difficulty=content_by_difficulty,
                 total_queries=self.query_count,
                 average_query_time_ms=avg_query_time,
                 cache_hit_rate=cache_hit_rate,
@@ -677,29 +649,16 @@ class EducationalVectorStore:
             # Return zero embedding as fallback
             return [0.0] * 1536  # OpenAI embedding dimension
     
-    def _get_collection_key(self, specialization: AgentSpecialization) -> str:
-        """Get collection key for agent specialization."""
-        return specialization.value
-    
-    def _get_search_collections(self, 
-                               agent_specialization: Optional[AgentSpecialization]) -> List[str]:
-        """Get list of collections to search based on specialization."""
-        if agent_specialization is None:
-            return list(self.collections.keys())
-        
-        collections = [agent_specialization.value]
-        
-        # Always include shared collection
-        if "shared" not in collections:
-            collections.append("shared")
-        
-        return collections
-    
-    def _build_metadata_filter(self,
-                              content_type: Optional[ContentType],
-                              difficulty_level: Optional[str]) -> Optional[Dict[str, Any]]:
-        """Build metadata filter for search."""
+    def _build_unified_metadata_filter(self,
+                                     agent_specialization: Optional[AgentSpecialization],
+                                     content_type: Optional[ContentType],
+                                     difficulty_level: Optional[str],
+                                     programming_concepts: Optional[List[str]]) -> Optional[Dict[str, Any]]:
+        """Build metadata filter for unified collection search."""
         where_filter = {}
+        
+        if agent_specialization:
+            where_filter["agent_specialization"] = agent_specialization.value
         
         if content_type:
             where_filter["content_type"] = content_type.value
@@ -707,13 +666,18 @@ class EducationalVectorStore:
         if difficulty_level:
             where_filter["difficulty_level"] = difficulty_level
         
+        # For programming concepts, we'd need to use a more complex filter
+        # ChromaDB supports array containment queries
+        if programming_concepts:
+            # This will match documents that contain any of the specified concepts
+            where_filter["programming_concepts"] = {"$contains": programming_concepts[0]}
+        
         return where_filter if where_filter else None
     
-    def _process_search_results(self,
-                               results: Dict[str, Any],
-                               similarity_threshold: float,
-                               collection_key: str) -> List[RetrievalResult]:
-        """Process raw search results into RetrievalResult objects."""
+    def _process_unified_search_results(self,
+                                      results: Dict[str, Any],
+                                      similarity_threshold: float) -> List[RetrievalResult]:
+        """Process raw search results from unified collection."""
         processed_results = []
         
         if not results['ids'] or not results['ids'][0]:
@@ -738,7 +702,7 @@ class EducationalVectorStore:
                 similarity_score=similarity_score,
                 metadata=metadata,
                 content_type=metadata.get('content_type', 'general'),
-                agent_specialization=metadata.get('agent_specialization', collection_key),
+                agent_specialization=metadata.get('agent_specialization', 'shared'),
                 programming_concepts=metadata.get('programming_concepts', []),
                 difficulty_level=metadata.get('difficulty_level', 'intermediate')
             )
@@ -753,23 +717,18 @@ class EducationalVectorStore:
         
         for result in results:
             try:
-                # Find and update the content metadata
-                for collection in self.collections.values():
-                    try:
-                        existing = collection.get(ids=[result.content_id])
-                        if existing['ids']:
-                            # Update metadata
-                            metadata = existing['metadatas'][0]
-                            metadata['retrieval_count'] = metadata.get('retrieval_count', 0) + 1
-                            metadata['last_accessed'] = current_time
-                            
-                            collection.update(
-                                ids=[result.content_id],
-                                metadatas=[metadata]
-                            )
-                            break
-                    except Exception:
-                        continue
+                # Get current metadata
+                existing = self.collection.get(ids=[result.content_id])
+                if existing['ids']:
+                    # Update metadata
+                    metadata = existing['metadatas'][0]
+                    metadata['retrieval_count'] = metadata.get('retrieval_count', 0) + 1
+                    metadata['last_accessed'] = current_time
+                    
+                    self.collection.update(
+                        ids=[result.content_id],
+                        metadatas=[metadata]
+                    )
             except Exception:
                 continue  # Skip if update fails
     
@@ -779,34 +738,34 @@ class EducationalVectorStore:
         return hashlib.md5(key_data.encode()).hexdigest()
 
 
-# Global vector store instance
-_vector_store: Optional[EducationalVectorStore] = None
+# Global unified vector store instance
+_unified_vector_store: Optional[UnifiedEducationalVectorStore] = None
 
 
-def get_vector_store(reload: bool = False) -> EducationalVectorStore:
+def get_vector_store(reload: bool = False) -> UnifiedEducationalVectorStore:
     """
-    Get global vector store instance (singleton pattern).
+    Get global unified vector store instance (singleton pattern).
     
     Args:
         reload: Force creation of new vector store instance
         
     Returns:
-        EducationalVectorStore instance
+        UnifiedEducationalVectorStore instance
     """
-    global _vector_store
-    if _vector_store is None or reload:
-        _vector_store = EducationalVectorStore()
-    return _vector_store
+    global _unified_vector_store
+    if _unified_vector_store is None or reload:
+        _unified_vector_store = UnifiedEducationalVectorStore()
+    return _unified_vector_store
 
 
 if __name__ == "__main__":
-    # Vector store test
+    # Unified vector store test
     try:
         vector_store = get_vector_store()
         
         # Test content addition
         test_metadata = ContentMetadata(
-            content_id="test_content_1",
+            content_id="test_unified_content_1",
             content_type=ContentType.IMPLEMENTATION_GUIDE,
             agent_specialization=AgentSpecialization.IMPLEMENTATION,
             programming_concepts=["binary_search", "algorithms"],
@@ -820,28 +779,34 @@ if __name__ == "__main__":
         target value to the middle element of the interval.
         """
         
-        # Add content
+        # Add content to unified collection
         success = vector_store.add_content(test_content, test_metadata)
         print(f"Content addition: {'✅ Success' if success else '❌ Failed'}")
         
-        # Test search
+        # Test unified search with filtering
         search_results = vector_store.search_similar_content(
             query="How do I implement binary search?",
             agent_specialization=AgentSpecialization.IMPLEMENTATION,
+            content_type_filter=ContentType.IMPLEMENTATION_GUIDE,
             max_results=3
         )
         
-        print(f"Search results: {len(search_results)} found")
+        print(f"Unified search results: {len(search_results)} found")
         for result in search_results:
             print(f"  - {result.content_id}: {result.similarity_score:.3f}")
         
         # Test statistics
         stats = vector_store.get_vector_store_stats()
-        print(f"Vector store stats: {stats.total_documents} documents, {stats.total_queries} queries")
+        print(f"Unified vector store stats:")
+        print(f"  - Total documents: {stats.total_documents}")
+        print(f"  - By type: {stats.content_by_type}")
+        print(f"  - By agent: {stats.content_by_agent}")
+        print(f"  - By difficulty: {stats.content_by_difficulty}")
+        print(f"  - Total queries: {stats.total_queries}")
         
-        print("✅ Vector store test completed successfully!")
+        print("✅ Unified vector store test completed successfully!")
         
     except Exception as e:
-        print(f"❌ Vector store test failed: {e}")
+        print(f"❌ Unified vector store test failed: {e}")
         import traceback
         traceback.print_exc()

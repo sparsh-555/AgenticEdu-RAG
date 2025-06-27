@@ -288,13 +288,13 @@ class BaseAgent(ABC):
     
     def _retrieve_context(self, agent_input: AgentInput) -> Optional[List[str]]:
         """
-        Retrieve relevant context from RAG system if available.
+        Retrieve relevant context from unified knowledge base system.
         
         Args:
             agent_input: Input containing query for context retrieval
             
         Returns:
-            List of relevant context strings or None if RAG disabled
+            List of relevant context strings or None if retrieval disabled
         """
         if not self.rag_system:
             self.logger.log_event(
@@ -306,15 +306,53 @@ class BaseAgent(ABC):
             return None
         
         try:
-            # This will be implemented when RAG system is available
-            # For now, return placeholder
+            # Import unified knowledge base retrieval function
+            from ..rag.knowledge_base import retrieve_for_agent
+            
+            # Create context for unified retrieval
+            retrieval_context = {
+                "student_level": agent_input.student_level,
+                "code_snippet": agent_input.code_snippet,
+                "error_message": agent_input.error_message,
+                "conversation_history": self._format_conversation_history(agent_input.previous_interactions),
+                "max_results": 5,
+                "prefer_code_examples": bool(agent_input.code_snippet),
+                "programming_domain": self._extract_programming_domain(agent_input.query),
+                "learning_objectives": self._extract_learning_objectives(agent_input.query)
+            }
+            
+            # Retrieve from unified knowledge base
+            response = retrieve_for_agent(
+                query=agent_input.query,
+                agent_type=self.get_agent_type().value,
+                srl_phase=agent_input.srl_phase,
+                context=retrieval_context
+            )
+            
+            # Extract context from unified response
             context = []
+            for result in response.results:
+                context.append(result["content"])
             
             self.logger.log_rag_operation(
-                operation="context_retrieval",
+                operation="unified_context_retrieval",
                 query=agent_input.query,
                 results_count=len(context),
                 context=agent_input.context
+            )
+            
+            # Log unified retrieval metadata
+            self.logger.log_event(
+                EventType.KNOWLEDGE_RETRIEVED,
+                f"Unified context retrieved: {len(context)} results",
+                context=agent_input.context,
+                extra_data={
+                    "average_relevance": response.average_relevance_score,
+                    "average_metadata_match": response.average_metadata_match_score,
+                    "content_types_found": response.content_types_found,
+                    "retrieval_strategy": response.retrieval_strategy,
+                    "served_from_cache": response.served_from_cache
+                }
             )
             
             return context if context else None
@@ -322,7 +360,7 @@ class BaseAgent(ABC):
         except Exception as e:
             self.logger.log_event(
                 EventType.ERROR_OCCURRED,
-                f"Context retrieval failed: {str(e)}",
+                f"Unified context retrieval failed: {str(e)}",
                 context=agent_input.context,
                 level="WARNING"
             )
@@ -521,6 +559,67 @@ class BaseAgent(ABC):
         ]
         text_lower = text.lower()
         return sum(1 for term in technical_terms if term in text_lower)
+    
+    def _format_conversation_history(self, previous_interactions: Optional[List[Dict[str, str]]]) -> Optional[List[Dict[str, str]]]:
+        """Format conversation history for unified knowledge base retrieval."""
+        if not previous_interactions:
+            return None
+        
+        # Format last 3 interactions for context
+        formatted_history = []
+        for interaction in previous_interactions[-3:]:
+            if "user" in interaction and "assistant" in interaction:
+                formatted_history.append({
+                    "role": "user",
+                    "content": interaction["user"]
+                })
+                formatted_history.append({
+                    "role": "assistant", 
+                    "content": interaction["assistant"]
+                })
+        
+        return formatted_history if formatted_history else None
+    
+    def _extract_programming_domain(self, query: str) -> Optional[str]:
+        """Extract programming domain from query for unified retrieval context."""
+        query_lower = query.lower()
+        
+        domain_keywords = {
+            "algorithms": ["algorithm", "sort", "search", "complexity", "optimization"],
+            "data_structures": ["array", "list", "stack", "queue", "tree", "graph"],
+            "web_development": ["web", "html", "css", "javascript", "api", "server"],
+            "object_oriented": ["class", "object", "inheritance", "polymorphism"],
+            "database": ["database", "sql", "query", "table", "join"]
+        }
+        
+        for domain, keywords in domain_keywords.items():
+            if any(keyword in query_lower for keyword in keywords):
+                return domain
+        
+        return None
+    
+    def _extract_learning_objectives(self, query: str) -> Optional[List[str]]:
+        """Extract learning objectives from query for unified retrieval context."""
+        query_lower = query.lower()
+        objectives = []
+        
+        # Common learning objective patterns
+        if "understand" in query_lower or "learn" in query_lower:
+            objectives.append("conceptual understanding")
+        
+        if "implement" in query_lower or "build" in query_lower:
+            objectives.append("implementation skills")
+        
+        if "optimize" in query_lower or "improve" in query_lower:
+            objectives.append("optimization techniques")
+        
+        if "debug" in query_lower or "fix" in query_lower:
+            objectives.append("debugging skills")
+        
+        if "best practice" in query_lower or "proper way" in query_lower:
+            objectives.append("best practices")
+        
+        return objectives if objectives else None
 
 
 if __name__ == "__main__":

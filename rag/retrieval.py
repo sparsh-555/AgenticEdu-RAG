@@ -1,27 +1,25 @@
 """
-RAG Retrieval System for Educational Content
+Unified RAG Retrieval System for Educational Content
 
-This module implements sophisticated retrieval strategies for educational content,
-combining vector similarity search with educational metadata filtering, relevance
-scoring, and agent-specific optimization. It provides the core RAG functionality
-for the multi-agent educational system.
+This module implements sophisticated retrieval strategies for educational content
+using a unified vector store with metadata-based filtering. It replaces the previous
+multi-collection approach with intelligent content filtering based on rich metadata.
 
 Key Features:
-1. Multi-Strategy Retrieval: Vector similarity, keyword matching, and hybrid approaches
+1. Unified Search Strategy: Single collection search with metadata filtering
 2. Educational Relevance Scoring: Content quality and appropriateness for learning context
-3. Agent-Specific Filtering: Specialized content retrieval for different agent types
-4. Context-Aware Ranking: Ranking based on student level, SRL phase, and query context
-5. Adaptive Retrieval: Learning from retrieval effectiveness to improve future results
-6. Performance Optimization: Caching, batch processing, and efficient search strategies
+3. Context-Aware Filtering: Intelligent filtering based on agent needs and SRL phases
+4. Adaptive Retrieval: Learning from retrieval effectiveness to improve future results
+5. Performance Optimization: Caching, batch processing, and efficient search strategies
+6. Rich Metadata Utilization: Leveraging comprehensive metadata for precise content matching
 
-Retrieval Pipeline:
+Unified Retrieval Pipeline:
 1. Query Analysis: Understand information need and educational context
-2. Search Strategy Selection: Choose optimal combination of retrieval methods
-3. Candidate Generation: Retrieve relevant content from vector store
-4. Educational Filtering: Apply educational metadata filters and quality checks
-5. Relevance Scoring: Score candidates based on educational appropriateness
-6. Result Ranking: Final ranking considering all factors
-7. Response Generation: Format results for agent consumption
+2. Metadata Filter Construction: Build intelligent filters for unified collection
+3. Unified Search: Single collection search with comprehensive filtering
+4. Educational Scoring: Score candidates based on educational appropriateness
+5. Context-Aware Ranking: Final ranking considering all factors
+6. Response Generation: Format results for agent consumption
 """
 
 import time
@@ -36,7 +34,7 @@ from collections import defaultdict, Counter
 from pydantic import BaseModel, Field
 
 from .vector_store import (
-    EducationalVectorStore, get_vector_store, RetrievalResult,
+    UnifiedEducationalVectorStore, get_vector_store, RetrievalResult,
     ContentType, AgentSpecialization
 )
 from ..classification.srl_classifier import SRLPhase
@@ -44,18 +42,17 @@ from ..utils.logging_utils import get_logger, LogContext, EventType, create_cont
 from ..config.settings import get_settings
 
 
-class RetrievalStrategy(Enum):
-    """Different retrieval strategies for different query types."""
-    VECTOR_SIMILARITY = "vector_similarity"
-    KEYWORD_MATCHING = "keyword_matching"
-    HYBRID = "hybrid"
-    CONCEPTUAL = "conceptual"
-    CONTEXTUAL = "contextual"
-    ADAPTIVE = "adaptive"
+class UnifiedRetrievalStrategy(Enum):
+    """Different retrieval strategies for unified collection."""
+    METADATA_FILTERED = "metadata_filtered"
+    CONCEPT_FOCUSED = "concept_focused"
+    EDUCATIONAL_RELEVANCE = "educational_relevance"
+    CONTEXTUAL_ADAPTIVE = "contextual_adaptive"
+    AGENT_SPECIALIZED = "agent_specialized"
 
 
-class RetrievalContext(BaseModel):
-    """Context information for retrieval operations."""
+class UnifiedRetrievalContext(BaseModel):
+    """Context information for unified retrieval operations."""
     query: str = Field(..., description="User query for retrieval")
     agent_specialization: Optional[str] = Field(default=None, description="Target agent specialization")
     srl_phase: Optional[str] = Field(default=None, description="Self-regulated learning phase")
@@ -75,25 +72,20 @@ class RetrievalContext(BaseModel):
     # Educational context
     programming_domain: Optional[str] = Field(default=None, description="Programming domain focus")
     learning_objectives: Optional[List[str]] = Field(default=None, description="Specific learning objectives")
-
-
-class RetrievalStrategy(Enum):
-    """Available retrieval strategies."""
-    VECTOR_ONLY = "vector_only"
-    ENHANCED_SIMILARITY = "enhanced_similarity"
-    EDUCATIONAL_RELEVANCE = "educational_relevance"
-    CONTEXTUAL_ADAPTIVE = "contextual_adaptive"
+    content_type_preference: Optional[str] = Field(default=None, description="Preferred content type")
 
 
 @dataclass
-class ScoredResult:
-    """A retrieval result with comprehensive scoring."""
+class UnifiedScoredResult:
+    """A retrieval result with comprehensive scoring for unified approach."""
     result: RetrievalResult
     
     # Scoring components
     similarity_score: float = 0.0
+    metadata_match_score: float = 0.0
     educational_relevance_score: float = 0.0
     context_match_score: float = 0.0
+    agent_specialization_score: float = 0.0
     quality_score: float = 0.0
     freshness_score: float = 0.0
     
@@ -105,44 +97,53 @@ class ScoredResult:
     score_explanation: Dict[str, float] = field(default_factory=dict)
 
 
-class RetrievalMetrics(BaseModel):
-    """Metrics for retrieval performance monitoring."""
+class UnifiedRetrievalMetrics(BaseModel):
+    """Metrics for unified retrieval performance monitoring."""
     total_retrievals: int = Field(default=0, description="Total retrieval operations")
     average_retrieval_time_ms: float = Field(default=0.0, description="Average retrieval time")
     average_results_returned: float = Field(default=0.0, description="Average number of results")
     
     # Quality metrics
     average_similarity_score: float = Field(default=0.0, description="Average similarity score")
+    average_metadata_match_score: float = Field(default=0.0, description="Average metadata match score")
     average_educational_relevance: float = Field(default=0.0, description="Average educational relevance")
     
     # Strategy effectiveness
     strategy_usage: Dict[str, int] = Field(default_factory=dict, description="Usage count per strategy")
     strategy_performance: Dict[str, float] = Field(default_factory=dict, description="Performance per strategy")
-
-
-class EducationalRetriever:
-    """
-    Advanced retrieval system for educational content.
     
-    This retriever combines multiple search strategies with educational metadata
-    to provide highly relevant content for programming education. It adapts its
-    approach based on the educational context and learning objectives.
+    # Metadata filter effectiveness
+    filter_usage: Dict[str, int] = Field(default_factory=dict, description="Usage count per filter type")
+    filter_effectiveness: Dict[str, float] = Field(default_factory=dict, description="Effectiveness per filter")
+
+
+class UnifiedEducationalRetriever:
+    """
+    Unified retrieval system for educational content.
+    
+    This retriever uses a single vector collection with intelligent metadata
+    filtering to provide highly relevant content for programming education.
+    It replaces the previous multi-collection approach with a more flexible
+    and maintainable unified architecture.
     """
     
     def __init__(self):
-        """Initialize the educational retriever."""
+        """Initialize the unified educational retriever."""
         self.settings = get_settings()
         self.logger = get_logger()
         self.vector_store = get_vector_store()
         
-        # Retrieval strategy weights
+        # Unified retrieval strategy weights
         self.strategy_weights = self._initialize_strategy_weights()
         
-        # Educational scoring weights
+        # Educational scoring weights for unified approach
         self.educational_weights = self._initialize_educational_weights()
         
+        # Metadata filtering weights
+        self.metadata_weights = self._initialize_metadata_weights()
+        
         # Performance tracking
-        self.retrieval_metrics = RetrievalMetrics()
+        self.retrieval_metrics = UnifiedRetrievalMetrics()
         self.strategy_performance_history = defaultdict(list)
         
         # Concept similarity mappings
@@ -153,18 +154,18 @@ class EducationalRetriever:
         
         self.logger.log_event(
             EventType.COMPONENT_INIT,
-            "Educational retriever initialized",
+            "Unified educational retriever initialized",
             extra_data={"retrieval_strategies": len(self.strategy_weights)}
         )
     
     def retrieve_educational_content(self, 
-                                   context: RetrievalContext,
-                                   log_context: Optional[LogContext] = None) -> List[ScoredResult]:
+                                   context: UnifiedRetrievalContext,
+                                   log_context: Optional[LogContext] = None) -> List[UnifiedScoredResult]:
         """
-        Retrieve and score educational content based on context.
+        Retrieve and score educational content using unified collection approach.
         
         Args:
-            context: Retrieval context with query and educational metadata
+            context: Unified retrieval context with query and educational metadata
             log_context: Logging context for tracking
             
         Returns:
@@ -174,31 +175,36 @@ class EducationalRetriever:
         start_time = time.time()
         
         try:
-            # Analyze query to determine optimal strategy
-            strategy = self._select_retrieval_strategy(context)
+            # Analyze query to determine optimal unified strategy
+            strategy = self._select_unified_retrieval_strategy(context)
             
             # Enhance query with educational context
             enhanced_query = self._enhance_query_with_context(context)
             
-            # Retrieve candidates using selected strategy
-            candidates = self._retrieve_candidates(enhanced_query, context, strategy)
+            # Build comprehensive metadata filters for unified collection
+            metadata_filters = self._build_comprehensive_metadata_filters(context)
             
-            # Score candidates using educational metrics
-            scored_results = self._score_educational_relevance(candidates, context)
+            # Retrieve candidates using unified approach
+            candidates = self._retrieve_from_unified_collection(
+                enhanced_query, context, metadata_filters, strategy
+            )
             
-            # Apply contextual filtering and ranking
-            filtered_results = self._apply_contextual_filtering(scored_results, context)
+            # Score candidates using unified educational metrics
+            scored_results = self._score_unified_educational_relevance(candidates, context)
             
-            # Final ranking and selection
-            final_results = self._final_ranking_and_selection(filtered_results, context)
+            # Apply advanced contextual filtering
+            filtered_results = self._apply_unified_contextual_filtering(scored_results, context)
             
-            # Update performance metrics
+            # Final ranking and selection with unified scoring
+            final_results = self._unified_final_ranking_and_selection(filtered_results, context)
+            
+            # Update unified performance metrics
             retrieval_time = (time.time() - start_time) * 1000
-            self._update_retrieval_metrics(strategy, final_results, retrieval_time)
+            self._update_unified_retrieval_metrics(strategy, final_results, retrieval_time, metadata_filters)
             
-            # Log retrieval operation
+            # Log unified retrieval operation
             self.logger.log_rag_operation(
-                operation="educational_retrieval",
+                operation="unified_educational_retrieval",
                 query=context.query,
                 results_count=len(final_results),
                 context=log_context
@@ -206,12 +212,13 @@ class EducationalRetriever:
             
             self.logger.log_event(
                 EventType.KNOWLEDGE_RETRIEVED,
-                f"Educational content retrieved: {len(final_results)} results",
+                f"Unified educational content retrieved: {len(final_results)} results",
                 context=log_context,
                 extra_data={
                     "strategy": strategy.value,
                     "retrieval_time_ms": retrieval_time,
                     "enhanced_query_length": len(enhanced_query),
+                    "metadata_filters_applied": len(metadata_filters),
                     "candidates_retrieved": len(candidates),
                     "final_results": len(final_results)
                 }
@@ -222,61 +229,62 @@ class EducationalRetriever:
         except Exception as e:
             self.logger.log_event(
                 EventType.ERROR_OCCURRED,
-                f"Educational retrieval failed: {str(e)}",
+                f"Unified educational retrieval failed: {str(e)}",
                 context=log_context,
                 level="ERROR",
                 extra_data={"query": context.query[:100]}
             )
             return []
     
-    def _select_retrieval_strategy(self, context: RetrievalContext) -> RetrievalStrategy:
+    def _select_unified_retrieval_strategy(self, context: UnifiedRetrievalContext) -> UnifiedRetrievalStrategy:
         """
-        Select optimal retrieval strategy based on context.
+        Select optimal unified retrieval strategy based on context.
         
         Args:
-            context: Retrieval context
+            context: Unified retrieval context
             
         Returns:
-            Selected retrieval strategy
+            Selected unified retrieval strategy
         """
-        # Strategy selection logic based on context
         strategy_scores = {}
         
-        # Vector similarity is good for conceptual queries
-        if any(word in context.query.lower() for word in ["concept", "understand", "explain"]):
-            strategy_scores[RetrievalStrategy.VECTOR_ONLY] = 0.8
+        # Agent-specialized strategy for specific agent requests
+        if context.agent_specialization:
+            strategy_scores[UnifiedRetrievalStrategy.AGENT_SPECIALIZED] = 0.9
         
-        # Enhanced similarity for implementation queries
-        if any(word in context.query.lower() for word in ["how", "implement", "approach"]):
-            strategy_scores[RetrievalStrategy.ENHANCED_SIMILARITY] = 0.9
+        # Concept-focused strategy for conceptual queries
+        if any(word in context.query.lower() for word in ["concept", "understand", "explain", "theory"]):
+            strategy_scores[UnifiedRetrievalStrategy.CONCEPT_FOCUSED] = 0.85
         
         # Educational relevance for learning-focused queries
-        if any(word in context.query.lower() for word in ["learn", "practice", "exercise"]):
-            strategy_scores[RetrievalStrategy.EDUCATIONAL_RELEVANCE] = 0.85
+        if any(word in context.query.lower() for word in ["learn", "practice", "exercise", "example"]):
+            strategy_scores[UnifiedRetrievalStrategy.EDUCATIONAL_RELEVANCE] = 0.8
         
         # Contextual adaptive for complex queries with multiple factors
         complexity_indicators = [
             bool(context.code_snippet),
             bool(context.error_message),
             bool(context.conversation_history),
-            len(context.query.split()) > 10
+            len(context.query.split()) > 10,
+            bool(context.programming_domain),
+            bool(context.learning_objectives)
         ]
         
-        if sum(complexity_indicators) >= 2:
-            strategy_scores[RetrievalStrategy.CONTEXTUAL_ADAPTIVE] = 0.95
+        if sum(complexity_indicators) >= 3:
+            strategy_scores[UnifiedRetrievalStrategy.CONTEXTUAL_ADAPTIVE] = 0.95
         
-        # Select strategy with highest score, default to enhanced similarity
+        # Select strategy with highest score, default to metadata filtered
         if strategy_scores:
             return max(strategy_scores, key=strategy_scores.get)
         else:
-            return RetrievalStrategy.ENHANCED_SIMILARITY
+            return UnifiedRetrievalStrategy.METADATA_FILTERED
     
-    def _enhance_query_with_context(self, context: RetrievalContext) -> str:
+    def _enhance_query_with_context(self, context: UnifiedRetrievalContext) -> str:
         """
-        Enhance query with educational context for better retrieval.
+        Enhance query with educational context for better unified retrieval.
         
         Args:
-            context: Retrieval context
+            context: Unified retrieval context
             
         Returns:
             Enhanced query string
@@ -286,17 +294,28 @@ class EducationalRetriever:
         # Add SRL phase context
         if context.srl_phase:
             if context.srl_phase == SRLPhase.FORETHOUGHT.value:
-                query_parts.append("planning implementation strategy approach")
+                query_parts.append("planning implementation strategy approach design")
             elif context.srl_phase == SRLPhase.PERFORMANCE.value:
-                query_parts.append("debugging error fixing troubleshooting")
+                query_parts.append("debugging error fixing troubleshooting performance")
+        
+        # Add agent specialization context
+        if context.agent_specialization:
+            if context.agent_specialization == AgentSpecialization.IMPLEMENTATION.value:
+                query_parts.append("implementation design approach methodology")
+            elif context.agent_specialization == AgentSpecialization.DEBUGGING.value:
+                query_parts.append("debugging troubleshooting error fixing")
         
         # Add student level context
         if context.student_level:
-            query_parts.append(f"{context.student_level} level")
+            query_parts.append(f"{context.student_level} level difficulty")
         
         # Add programming domain context
         if context.programming_domain:
             query_parts.append(context.programming_domain)
+        
+        # Add content type preference
+        if context.content_type_preference:
+            query_parts.append(context.content_type_preference)
         
         # Add code context
         if context.code_snippet:
@@ -311,81 +330,155 @@ class EducationalRetriever:
             if error_type:
                 query_parts.append(error_type)
         
-        # Expand keywords
+        # Add learning objectives
+        if context.learning_objectives:
+            query_parts.extend(context.learning_objectives[:2])  # Add top 2 objectives
+        
+        # Expand keywords for unified search
         expanded_query = self._expand_keywords(" ".join(query_parts))
         
         return expanded_query
     
-    def _retrieve_candidates(self, 
-                           enhanced_query: str,
-                           context: RetrievalContext,
-                           strategy: RetrievalStrategy) -> List[RetrievalResult]:
+    def _build_comprehensive_metadata_filters(self, context: UnifiedRetrievalContext) -> Dict[str, Any]:
         """
-        Retrieve candidate results using specified strategy.
+        Build comprehensive metadata filters for unified collection search.
+        
+        Args:
+            context: Unified retrieval context
+            
+        Returns:
+            Dictionary of metadata filters
+        """
+        filters = {}
+        
+        # Agent specialization filter
+        if context.agent_specialization:
+            filters['agent_specialization'] = context.agent_specialization
+        
+        # Difficulty level filter
+        if context.student_level:
+            filters['difficulty_level'] = context.student_level
+        
+        # Content type filter based on SRL phase or preference
+        if context.content_type_preference:
+            filters['content_type'] = context.content_type_preference
+        elif context.srl_phase:
+            if context.srl_phase == SRLPhase.FORETHOUGHT.value:
+                filters['content_type'] = ContentType.IMPLEMENTATION_GUIDE.value
+            elif context.srl_phase == SRLPhase.PERFORMANCE.value:
+                filters['content_type'] = ContentType.DEBUGGING_RESOURCE.value
+        
+        # Code examples preference
+        if context.prefer_code_examples:
+            filters['has_code_examples'] = True
+        
+        # Error examples preference
+        if context.prefer_error_examples:
+            filters['has_error_examples'] = True
+        
+        return filters
+    
+    def _retrieve_from_unified_collection(self, 
+                                        enhanced_query: str,
+                                        context: UnifiedRetrievalContext,
+                                        metadata_filters: Dict[str, Any],
+                                        strategy: UnifiedRetrievalStrategy) -> List[RetrievalResult]:
+        """
+        Retrieve candidates from unified collection using strategy and filters.
         
         Args:
             enhanced_query: Enhanced query string
-            context: Retrieval context
-            strategy: Retrieval strategy to use
+            context: Unified retrieval context
+            metadata_filters: Metadata filters for unified collection
+            strategy: Unified retrieval strategy to use
             
         Returns:
             List of candidate retrieval results
         """
-        if strategy == RetrievalStrategy.VECTOR_ONLY:
-            return self._vector_only_retrieval(enhanced_query, context)
-        elif strategy == RetrievalStrategy.ENHANCED_SIMILARITY:
-            return self._enhanced_similarity_retrieval(enhanced_query, context)
-        elif strategy == RetrievalStrategy.EDUCATIONAL_RELEVANCE:
-            return self._educational_relevance_retrieval(enhanced_query, context)
-        elif strategy == RetrievalStrategy.CONTEXTUAL_ADAPTIVE:
-            return self._contextual_adaptive_retrieval(enhanced_query, context)
+        if strategy == UnifiedRetrievalStrategy.AGENT_SPECIALIZED:
+            return self._agent_specialized_unified_retrieval(enhanced_query, context, metadata_filters)
+        elif strategy == UnifiedRetrievalStrategy.CONCEPT_FOCUSED:
+            return self._concept_focused_unified_retrieval(enhanced_query, context, metadata_filters)
+        elif strategy == UnifiedRetrievalStrategy.EDUCATIONAL_RELEVANCE:
+            return self._educational_relevance_unified_retrieval(enhanced_query, context, metadata_filters)
+        elif strategy == UnifiedRetrievalStrategy.CONTEXTUAL_ADAPTIVE:
+            return self._contextual_adaptive_unified_retrieval(enhanced_query, context, metadata_filters)
         else:
-            return self._enhanced_similarity_retrieval(enhanced_query, context)
+            return self._metadata_filtered_unified_retrieval(enhanced_query, context, metadata_filters)
     
-    def _vector_only_retrieval(self, 
-                              query: str, 
-                              context: RetrievalContext) -> List[RetrievalResult]:
-        """Basic vector similarity retrieval."""
+    def _metadata_filtered_unified_retrieval(self, 
+                                           query: str, 
+                                           context: UnifiedRetrievalContext,
+                                           filters: Dict[str, Any]) -> List[RetrievalResult]:
+        """Basic unified retrieval with metadata filtering."""
         agent_spec = None
         if context.agent_specialization:
             agent_spec = AgentSpecialization(context.agent_specialization)
+        
+        content_type = None
+        if filters.get('content_type'):
+            content_type = ContentType(filters['content_type'])
         
         return self.vector_store.search_similar_content(
             query=query,
             agent_specialization=agent_spec,
+            content_type_filter=content_type,
+            difficulty_level=filters.get('difficulty_level'),
             max_results=context.max_results * 2,  # Get more for ranking
             similarity_threshold=context.similarity_threshold
         )
     
-    def _enhanced_similarity_retrieval(self, 
-                                     query: str,
-                                     context: RetrievalContext) -> List[RetrievalResult]:
-        """Enhanced retrieval with content type filtering."""
-        agent_spec = None
-        if context.agent_specialization:
-            agent_spec = AgentSpecialization(context.agent_specialization)
+    def _agent_specialized_unified_retrieval(self, 
+                                           query: str,
+                                           context: UnifiedRetrievalContext,
+                                           filters: Dict[str, Any]) -> List[RetrievalResult]:
+        """Agent-specialized retrieval from unified collection."""
+        agent_spec = AgentSpecialization(context.agent_specialization)
         
-        # Determine preferred content types based on context
+        # Determine preferred content types based on agent specialization
         content_type_filter = None
-        if context.srl_phase == SRLPhase.FORETHOUGHT.value:
+        if agent_spec == AgentSpecialization.IMPLEMENTATION:
             content_type_filter = ContentType.IMPLEMENTATION_GUIDE
-        elif context.srl_phase == SRLPhase.PERFORMANCE.value:
+        elif agent_spec == AgentSpecialization.DEBUGGING:
             content_type_filter = ContentType.DEBUGGING_RESOURCE
         
         return self.vector_store.search_similar_content(
             query=query,
             agent_specialization=agent_spec,
             content_type_filter=content_type_filter,
-            difficulty_level=context.student_level,
+            difficulty_level=filters.get('difficulty_level'),
             max_results=context.max_results * 3,
             similarity_threshold=context.similarity_threshold
         )
     
-    def _educational_relevance_retrieval(self, 
-                                       query: str,
-                                       context: RetrievalContext) -> List[RetrievalResult]:
-        """Retrieval focused on educational relevance."""
-        # Multiple searches with different content types
+    def _concept_focused_unified_retrieval(self, 
+                                         query: str,
+                                         context: UnifiedRetrievalContext,
+                                         filters: Dict[str, Any]) -> List[RetrievalResult]:
+        """Concept-focused retrieval from unified collection."""
+        # Extract programming concepts from query
+        concepts = self._extract_programming_concepts_from_query(query)
+        
+        agent_spec = None
+        if context.agent_specialization:
+            agent_spec = AgentSpecialization(context.agent_specialization)
+        
+        return self.vector_store.search_similar_content(
+            query=query,
+            agent_specialization=agent_spec,
+            content_type_filter=ContentType.CONCEPT_EXPLANATION,
+            programming_concepts=concepts[:3] if concepts else None,  # Top 3 concepts
+            difficulty_level=filters.get('difficulty_level'),
+            max_results=context.max_results * 3,
+            similarity_threshold=context.similarity_threshold
+        )
+    
+    def _educational_relevance_unified_retrieval(self, 
+                                               query: str,
+                                               context: UnifiedRetrievalContext,
+                                               filters: Dict[str, Any]) -> List[RetrievalResult]:
+        """Educational relevance focused retrieval from unified collection."""
+        # Multiple searches with different educational content types
         all_results = []
         
         agent_spec = None
@@ -396,7 +489,8 @@ class EducationalRetriever:
         educational_types = [
             ContentType.CONCEPT_EXPLANATION,
             ContentType.CODE_EXAMPLE,
-            ContentType.BEST_PRACTICE
+            ContentType.BEST_PRACTICE,
+            ContentType.EXERCISE
         ]
         
         for content_type in educational_types:
@@ -404,27 +498,29 @@ class EducationalRetriever:
                 query=query,
                 agent_specialization=agent_spec,
                 content_type_filter=content_type,
-                difficulty_level=context.student_level,
+                difficulty_level=filters.get('difficulty_level'),
                 max_results=context.max_results,
-                similarity_threshold=context.similarity_threshold
+                similarity_threshold=context.similarity_threshold * 0.8  # Lower threshold
             )
             all_results.extend(results)
         
         # Remove duplicates and return top results
         unique_results = self._deduplicate_results(all_results)
-        return unique_results[:context.max_results * 3]
+        return unique_results[:context.max_results * 4]
     
-    def _contextual_adaptive_retrieval(self, 
-                                     query: str,
-                                     context: RetrievalContext) -> List[RetrievalResult]:
-        """Advanced retrieval that adapts to full context."""
+    def _contextual_adaptive_unified_retrieval(self, 
+                                             query: str,
+                                             context: UnifiedRetrievalContext,
+                                             filters: Dict[str, Any]) -> List[RetrievalResult]:
+        """Advanced contextual adaptive retrieval from unified collection."""
         all_results = []
         
         # Multiple retrieval passes with different strategies
         strategies = [
             ("main_query", query),
             ("code_focused", self._create_code_focused_query(query, context)),
-            ("concept_focused", self._create_concept_focused_query(query, context))
+            ("concept_focused", self._create_concept_focused_query(query, context)),
+            ("error_focused", self._create_error_focused_query(query, context))
         ]
         
         agent_spec = None
@@ -432,13 +528,13 @@ class EducationalRetriever:
             agent_spec = AgentSpecialization(context.agent_specialization)
         
         for strategy_name, search_query in strategies:
-            if search_query:
+            if search_query and search_query != query:  # Avoid duplicate searches
                 results = self.vector_store.search_similar_content(
                     query=search_query,
                     agent_specialization=agent_spec,
-                    difficulty_level=context.student_level,
+                    difficulty_level=filters.get('difficulty_level'),
                     max_results=context.max_results * 2,
-                    similarity_threshold=context.similarity_threshold * 0.8  # Lower threshold
+                    similarity_threshold=context.similarity_threshold * 0.7  # Lower threshold
                 )
                 
                 # Tag results with strategy for scoring
@@ -450,29 +546,32 @@ class EducationalRetriever:
         
         # Deduplicate and return
         unique_results = self._deduplicate_results(all_results)
-        return unique_results[:context.max_results * 4]
+        return unique_results[:context.max_results * 5]
     
-    def _score_educational_relevance(self, 
-                                   candidates: List[RetrievalResult],
-                                   context: RetrievalContext) -> List[ScoredResult]:
+    def _score_unified_educational_relevance(self, 
+                                           candidates: List[RetrievalResult],
+                                           context: UnifiedRetrievalContext) -> List[UnifiedScoredResult]:
         """
-        Score candidates based on educational relevance.
+        Score candidates based on unified educational relevance metrics.
         
         Args:
-            candidates: Candidate retrieval results
-            context: Retrieval context
+            candidates: Candidate retrieval results from unified collection
+            context: Unified retrieval context
             
         Returns:
-            List of scored results
+            List of scored results with comprehensive unified scoring
         """
         scored_results = []
         
         for candidate in candidates:
             # Initialize scored result
-            scored_result = ScoredResult(result=candidate)
+            scored_result = UnifiedScoredResult(result=candidate)
             
             # Base similarity score
             scored_result.similarity_score = candidate.similarity_score
+            
+            # Metadata match scoring (new for unified approach)
+            scored_result.metadata_match_score = self._calculate_metadata_match(candidate, context)
             
             # Educational relevance scoring
             scored_result.educational_relevance_score = self._calculate_educational_relevance(
@@ -480,7 +579,10 @@ class EducationalRetriever:
             )
             
             # Context match scoring
-            scored_result.context_match_score = self._calculate_context_match(
+            scored_result.context_match_score = self._calculate_context_match(candidate, context)
+            
+            # Agent specialization match scoring
+            scored_result.agent_specialization_score = self._calculate_agent_specialization_match(
                 candidate, context
             )
             
@@ -490,14 +592,16 @@ class EducationalRetriever:
             # Freshness scoring (based on last accessed, retrieval count)
             scored_result.freshness_score = self._calculate_freshness_score(candidate)
             
-            # Calculate combined score
-            scored_result.combined_score = self._calculate_combined_score(scored_result)
+            # Calculate unified combined score
+            scored_result.combined_score = self._calculate_unified_combined_score(scored_result)
             
-            # Store score explanation
+            # Store comprehensive score explanation
             scored_result.score_explanation = {
                 "similarity": scored_result.similarity_score,
+                "metadata_match": scored_result.metadata_match_score,
                 "educational_relevance": scored_result.educational_relevance_score,
                 "context_match": scored_result.context_match_score,
+                "agent_specialization": scored_result.agent_specialization_score,
                 "quality": scored_result.quality_score,
                 "freshness": scored_result.freshness_score,
                 "combined": scored_result.combined_score
@@ -507,175 +611,417 @@ class EducationalRetriever:
         
         return scored_results
     
-    def _calculate_educational_relevance(self, 
-                                       candidate: RetrievalResult,
-                                       context: RetrievalContext) -> float:
-        """Calculate educational relevance score."""
-        relevance_score = 0.0
-        
-        # SRL phase alignment
-        if context.srl_phase and context.agent_specialization:
-            if (context.srl_phase == SRLPhase.FORETHOUGHT.value and 
-                candidate.agent_specialization == "implementation"):
-                relevance_score += 0.3
-            elif (context.srl_phase == SRLPhase.PERFORMANCE.value and 
-                  candidate.agent_specialization == "debugging"):
-                relevance_score += 0.3
-        
-        # Student level alignment
-        if context.student_level and candidate.difficulty_level == context.student_level:
-            relevance_score += 0.2
-        
-        # Content type preferences
-        if context.prefer_code_examples and candidate.content_type in ["code_example", "mixed"]:
-            relevance_score += 0.15
-        
-        if context.prefer_error_examples and "error" in candidate.content_type.lower():
-            relevance_score += 0.15
-        
-        # Programming concepts alignment
-        if context.programming_domain and candidate.programming_concepts:
-            domain_concepts = self.concept_similarity.get(context.programming_domain, [])
-            concept_overlap = len(set(candidate.programming_concepts) & set(domain_concepts))
-            if concept_overlap > 0:
-                relevance_score += min(0.2, concept_overlap * 0.05)
-        
-        return min(1.0, relevance_score)
-    
-    def _calculate_context_match(self, 
-                               candidate: RetrievalResult,
-                               context: RetrievalContext) -> float:
-        """Calculate context matching score."""
+    def _calculate_metadata_match(self, candidate: RetrievalResult, context: UnifiedRetrievalContext) -> float:
+        """Calculate how well candidate metadata matches context requirements."""
         match_score = 0.0
         
-        # Code snippet context matching
-        if context.code_snippet and candidate.metadata.get('has_code_examples'):
+        # Agent specialization match
+        if context.agent_specialization and candidate.agent_specialization == context.agent_specialization:
             match_score += 0.3
         
-        # Error message context matching
-        if context.error_message and candidate.metadata.get('has_error_examples'):
-            match_score += 0.3
+        # Difficulty level match
+        if context.student_level and candidate.difficulty_level == context.student_level:
+            match_score += 0.2
         
-        # Conversation history relevance
-        if context.conversation_history:
-            # Simple relevance based on topic continuity
-            recent_topics = self._extract_topics_from_history(context.conversation_history)
-            candidate_topics = candidate.programming_concepts
-            
-            topic_overlap = len(set(recent_topics) & set(candidate_topics))
-            if topic_overlap > 0:
-                match_score += min(0.4, topic_overlap * 0.1)
+        # Content type preference match
+        if context.content_type_preference and candidate.content_type == context.content_type_preference:
+            match_score += 0.2
+        
+        # Code examples preference match
+        if context.prefer_code_examples and candidate.metadata.get('has_code_examples', False):
+            match_score += 0.15
+        
+        # Error examples preference match
+        if context.prefer_error_examples and candidate.metadata.get('has_error_examples', False):
+            match_score += 0.15
         
         return min(1.0, match_score)
     
+    def _calculate_educational_relevance(self, candidate: RetrievalResult, context: UnifiedRetrievalContext) -> float:
+        """Calculate educational relevance score for unified approach."""
+        relevance_score = 0.0
+        
+        # Programming concepts overlap
+        if context.programming_domain:
+            if context.programming_domain.lower() in [concept.lower() for concept in candidate.programming_concepts]:
+                relevance_score += 0.25
+        
+        # Learning objectives alignment
+        if context.learning_objectives:
+            candidate_content_lower = candidate.content.lower()
+            objectives_found = sum(1 for obj in context.learning_objectives 
+                                 if obj.lower() in candidate_content_lower)
+            relevance_score += min(0.3, objectives_found * 0.1)
+        
+        # SRL phase alignment
+        if context.srl_phase:
+            if context.srl_phase == SRLPhase.FORETHOUGHT.value:
+                forethought_indicators = ["plan", "design", "approach", "strategy", "implement"]
+                if any(indicator in candidate.content.lower() for indicator in forethought_indicators):
+                    relevance_score += 0.2
+            elif context.srl_phase == SRLPhase.PERFORMANCE.value:
+                performance_indicators = ["debug", "error", "fix", "troubleshoot", "problem"]
+                if any(indicator in candidate.content.lower() for indicator in performance_indicators):
+                    relevance_score += 0.2
+        
+        # Content quality indicators
+        quality_indicators = ["example", "step", "guide", "tutorial", "explanation"]
+        quality_found = sum(1 for indicator in quality_indicators 
+                          if indicator in candidate.content.lower())
+        relevance_score += min(0.25, quality_found * 0.05)
+        
+        return min(1.0, relevance_score)
+    
+    def _calculate_context_match(self, candidate: RetrievalResult, context: UnifiedRetrievalContext) -> float:
+        """Calculate context match score."""
+        context_score = 0.0
+        
+        # Code snippet context match
+        if context.code_snippet:
+            code_terms = self._extract_code_terms(context.code_snippet)
+            candidate_content_lower = candidate.content.lower()
+            terms_found = sum(1 for term in code_terms if term.lower() in candidate_content_lower)
+            context_score += min(0.4, terms_found * 0.1)
+        
+        # Error message context match
+        if context.error_message:
+            error_type = self._extract_error_type(context.error_message)
+            if error_type and error_type.lower() in candidate.content.lower():
+                context_score += 0.3
+        
+        # Conversation history context
+        if context.conversation_history:
+            recent_topics = self._extract_topics_from_history(context.conversation_history)
+            candidate_content_lower = candidate.content.lower()
+            topics_found = sum(1 for topic in recent_topics if topic.lower() in candidate_content_lower)
+            context_score += min(0.3, topics_found * 0.1)
+        
+        return min(1.0, context_score)
+    
+    def _calculate_agent_specialization_match(self, candidate: RetrievalResult, context: UnifiedRetrievalContext) -> float:
+        """Calculate agent specialization match score."""
+        if not context.agent_specialization:
+            return 0.5  # Neutral score if no preference
+        
+        if candidate.agent_specialization == context.agent_specialization:
+            return 1.0
+        elif candidate.agent_specialization == AgentSpecialization.SHARED.value:
+            return 0.7  # Shared content is good for any agent
+        else:
+            return 0.3  # Different specialization, but still potentially useful
+    
     def _calculate_quality_score(self, candidate: RetrievalResult) -> float:
         """Calculate content quality score."""
-        quality_score = 0.5  # Base quality
+        quality_score = 0.5  # Base score
         
-        # Content length (optimal range)
+        # Content length quality (not too short, not too long)
         content_length = candidate.metadata.get('content_length', 0)
-        if 200 <= content_length <= 1500:  # Optimal range
+        if 200 <= content_length <= 2000:
             quality_score += 0.2
-        elif content_length < 100 or content_length > 3000:  # Poor range
-            quality_score -= 0.1
+        elif content_length > 100:
+            quality_score += 0.1
         
-        # Content type quality indicators
-        high_quality_types = ["implementation_guide", "concept_explanation", "best_practice"]
-        if candidate.content_type in high_quality_types:
+        # Code examples boost quality
+        if candidate.metadata.get('has_code_examples', False):
             quality_score += 0.15
         
-        # Concept density
-        concepts_count = len(candidate.programming_concepts)
-        if 2 <= concepts_count <= 5:  # Good concept density
-            quality_score += 0.15
+        # Educational value indicators
+        educational_words = ["example", "explanation", "guide", "tutorial", "step"]
+        content_lower = candidate.content.lower()
+        educational_indicators = sum(1 for word in educational_words if word in content_lower)
+        quality_score += min(0.15, educational_indicators * 0.03)
         
-        return max(0.0, min(1.0, quality_score))
+        return min(1.0, quality_score)
     
     def _calculate_freshness_score(self, candidate: RetrievalResult) -> float:
-        """Calculate freshness/popularity score based on usage."""
-        # Higher retrieval count indicates proven usefulness
+        """Calculate content freshness score."""
+        # Higher score for recently accessed, frequently retrieved content
         retrieval_count = candidate.metadata.get('retrieval_count', 0)
-        
-        # Normalize retrieval count to 0-1 scale
-        freshness_score = min(1.0, retrieval_count / 100.0)
-        
-        # Recent access bonus
         last_accessed = candidate.metadata.get('last_accessed', 0)
+        
+        # Retrieval frequency component
+        frequency_score = min(0.5, retrieval_count * 0.1)
+        
+        # Recency component (simple linear decay)
         current_time = time.time()
-        days_since_access = (current_time - last_accessed) / (24 * 3600)
+        time_since_access = current_time - last_accessed
+        days_since_access = time_since_access / (24 * 3600)
+        recency_score = max(0.0, 0.5 - (days_since_access * 0.05))
         
-        if days_since_access < 7:  # Recently accessed
-            freshness_score += 0.1
-        
-        return min(1.0, freshness_score)
+        return frequency_score + recency_score
     
-    def _calculate_combined_score(self, scored_result: ScoredResult) -> float:
-        """Calculate weighted combined score."""
+    def _calculate_unified_combined_score(self, scored_result: UnifiedScoredResult) -> float:
+        """Calculate unified combined score using weighted components."""
         weights = self.educational_weights
         
-        combined = (
-            scored_result.similarity_score * weights["similarity"] +
-            scored_result.educational_relevance_score * weights["educational_relevance"] +
-            scored_result.context_match_score * weights["context_match"] +
-            scored_result.quality_score * weights["quality"] +
-            scored_result.freshness_score * weights["freshness"]
+        combined_score = (
+            scored_result.similarity_score * weights.get('similarity', 0.25) +
+            scored_result.metadata_match_score * weights.get('metadata_match', 0.20) +
+            scored_result.educational_relevance_score * weights.get('educational_relevance', 0.20) +
+            scored_result.context_match_score * weights.get('context_match', 0.15) +
+            scored_result.agent_specialization_score * weights.get('agent_specialization', 0.10) +
+            scored_result.quality_score * weights.get('quality', 0.07) +
+            scored_result.freshness_score * weights.get('freshness', 0.03)
         )
         
-        return combined
+        return min(1.0, combined_score)
     
-    def _apply_contextual_filtering(self, 
-                                  scored_results: List[ScoredResult],
-                                  context: RetrievalContext) -> List[ScoredResult]:
-        """Apply contextual filtering to scored results."""
+    def _apply_unified_contextual_filtering(self, 
+                                          scored_results: List[UnifiedScoredResult],
+                                          context: UnifiedRetrievalContext) -> List[UnifiedScoredResult]:
+        """Apply advanced contextual filtering for unified results."""
         filtered_results = []
         
         for scored_result in scored_results:
-            # Minimum score threshold
-            if scored_result.combined_score < 0.3:
+            # Skip results below minimum thresholds
+            if scored_result.similarity_score < context.similarity_threshold:
                 continue
             
-            # Diversity filtering (avoid too similar content)
-            if self._passes_diversity_filter(scored_result, filtered_results):
+            # Skip very low quality content
+            if scored_result.quality_score < 0.3:
+                continue
+            
+            # Skip if educational relevance is too low
+            if scored_result.educational_relevance_score < 0.2:
+                continue
+            
+            # Apply context-specific filters
+            if self._passes_contextual_filters(scored_result, context):
                 filtered_results.append(scored_result)
         
         return filtered_results
     
-    def _final_ranking_and_selection(self, 
-                                   filtered_results: List[ScoredResult],
-                                   context: RetrievalContext) -> List[ScoredResult]:
-        """Final ranking and selection of results."""
+    def _passes_contextual_filters(self, scored_result: UnifiedScoredResult, context: UnifiedRetrievalContext) -> bool:
+        """Check if result passes context-specific filters."""
+        # Agent specialization filter
+        if context.agent_specialization:
+            if (scored_result.result.agent_specialization != context.agent_specialization and 
+                scored_result.result.agent_specialization != AgentSpecialization.SHARED.value):
+                return scored_result.agent_specialization_score > 0.5
+        
+        # Content type preference filter
+        if context.content_type_preference:
+            if scored_result.result.content_type != context.content_type_preference:
+                return scored_result.metadata_match_score > 0.6
+        
+        # Code examples requirement
+        if context.prefer_code_examples:
+            if not scored_result.result.metadata.get('has_code_examples', False):
+                return scored_result.educational_relevance_score > 0.7
+        
+        return True
+    
+    def _unified_final_ranking_and_selection(self, 
+                                           filtered_results: List[UnifiedScoredResult],
+                                           context: UnifiedRetrievalContext) -> List[UnifiedScoredResult]:
+        """Final ranking and selection for unified results."""
         # Sort by combined score
-        filtered_results.sort(key=lambda x: x.combined_score, reverse=True)
+        sorted_results = sorted(filtered_results, key=lambda x: x.combined_score, reverse=True)
         
         # Assign rank positions
-        for i, result in enumerate(filtered_results):
+        for i, result in enumerate(sorted_results):
             result.rank_position = i + 1
         
+        # Apply diversity filtering to avoid too similar results
+        diverse_results = self._apply_diversity_filtering(sorted_results, context)
+        
         # Select top results
-        final_results = filtered_results[:context.max_results]
+        final_results = diverse_results[:context.max_results]
         
         return final_results
     
-    def _passes_diversity_filter(self, 
-                                candidate: ScoredResult,
-                                existing_results: List[ScoredResult]) -> bool:
-        """Check if candidate passes diversity filter."""
-        if not existing_results:
-            return True
+    def _apply_diversity_filtering(self, 
+                                 sorted_results: List[UnifiedScoredResult],
+                                 context: UnifiedRetrievalContext) -> List[UnifiedScoredResult]:
+        """Apply diversity filtering to avoid overly similar results."""
+        if len(sorted_results) <= context.max_results:
+            return sorted_results
         
-        # Check content similarity with existing results
-        candidate_concepts = set(candidate.result.programming_concepts)
+        diverse_results = []
+        content_similarity_threshold = 0.85
         
-        for existing in existing_results:
-            existing_concepts = set(existing.result.programming_concepts)
+        for result in sorted_results:
+            is_diverse = True
             
-            # If too much concept overlap, might be too similar
-            overlap_ratio = len(candidate_concepts & existing_concepts) / max(len(candidate_concepts | existing_concepts), 1)
+            # Check similarity with already selected results
+            for selected in diverse_results:
+                content_similarity = self._calculate_content_similarity(
+                    result.result.content, selected.result.content
+                )
+                
+                if content_similarity > content_similarity_threshold:
+                    is_diverse = False
+                    break
             
-            if overlap_ratio > 0.8:  # Too similar
-                return False
+            if is_diverse:
+                diverse_results.append(result)
+            
+            # Stop if we have enough diverse results
+            if len(diverse_results) >= context.max_results * 2:
+                break
         
-        return True
+        return diverse_results
+    
+    def _calculate_content_similarity(self, content1: str, content2: str) -> float:
+        """Calculate similarity between two content strings."""
+        # Simple word overlap similarity
+        words1 = set(content1.lower().split())
+        words2 = set(content2.lower().split())
+        
+        if not words1 or not words2:
+            return 0.0
+        
+        intersection = words1.intersection(words2)
+        union = words1.union(words2)
+        
+        return len(intersection) / len(union) if union else 0.0
+    
+    def _update_unified_retrieval_metrics(self, 
+                                        strategy: UnifiedRetrievalStrategy,
+                                        results: List[UnifiedScoredResult],
+                                        retrieval_time: float,
+                                        metadata_filters: Dict[str, Any]):
+        """Update unified retrieval performance metrics."""
+        # Update basic metrics
+        self.retrieval_metrics.total_retrievals += 1
+        self.retrieval_metrics.average_retrieval_time_ms = (
+            (self.retrieval_metrics.average_retrieval_time_ms * (self.retrieval_metrics.total_retrievals - 1) + 
+             retrieval_time) / self.retrieval_metrics.total_retrievals
+        )
+        self.retrieval_metrics.average_results_returned = (
+            (self.retrieval_metrics.average_results_returned * (self.retrieval_metrics.total_retrievals - 1) + 
+             len(results)) / self.retrieval_metrics.total_retrievals
+        )
+        
+        # Update quality metrics
+        if results:
+            avg_similarity = sum(r.similarity_score for r in results) / len(results)
+            avg_metadata_match = sum(r.metadata_match_score for r in results) / len(results)
+            avg_educational_relevance = sum(r.educational_relevance_score for r in results) / len(results)
+            
+            self.retrieval_metrics.average_similarity_score = (
+                (self.retrieval_metrics.average_similarity_score * (self.retrieval_metrics.total_retrievals - 1) + 
+                 avg_similarity) / self.retrieval_metrics.total_retrievals
+            )
+            self.retrieval_metrics.average_metadata_match_score = (
+                (self.retrieval_metrics.average_metadata_match_score * (self.retrieval_metrics.total_retrievals - 1) + 
+                 avg_metadata_match) / self.retrieval_metrics.total_retrievals
+            )
+            self.retrieval_metrics.average_educational_relevance = (
+                (self.retrieval_metrics.average_educational_relevance * (self.retrieval_metrics.total_retrievals - 1) + 
+                 avg_educational_relevance) / self.retrieval_metrics.total_retrievals
+            )
+        
+        # Update strategy usage
+        strategy_name = strategy.value
+        self.retrieval_metrics.strategy_usage[strategy_name] = (
+            self.retrieval_metrics.strategy_usage.get(strategy_name, 0) + 1
+        )
+        
+        # Update filter usage
+        for filter_name in metadata_filters.keys():
+            self.retrieval_metrics.filter_usage[filter_name] = (
+                self.retrieval_metrics.filter_usage.get(filter_name, 0) + 1
+            )
+    
+    def _extract_code_terms(self, code_snippet: str) -> List[str]:
+        """Extract key terms from code snippet."""
+        # Extract function names, variable names, keywords
+        terms = []
+        
+        # Function definitions
+        function_matches = re.findall(r'def\s+(\w+)', code_snippet)
+        terms.extend(function_matches)
+        
+        # Class definitions
+        class_matches = re.findall(r'class\s+(\w+)', code_snippet)
+        terms.extend(class_matches)
+        
+        # Import statements
+        import_matches = re.findall(r'import\s+(\w+)', code_snippet)
+        terms.extend(import_matches)
+        
+        # Variable assignments
+        var_matches = re.findall(r'(\w+)\s*=', code_snippet)
+        terms.extend(var_matches)
+        
+        return list(set(terms))  # Remove duplicates
+    
+    def _extract_error_type(self, error_message: str) -> Optional[str]:
+        """Extract error type from error message."""
+        error_patterns = [
+            r'(\w*Error)', r'(\w*Exception)', r'(\w*Warning)'
+        ]
+        
+        for pattern in error_patterns:
+            match = re.search(pattern, error_message)
+            if match:
+                return match.group(1)
+        
+        return None
+    
+    def _extract_topics_from_history(self, conversation_history: List[Dict[str, str]]) -> List[str]:
+        """Extract key topics from conversation history."""
+        topics = []
+        
+        for message in conversation_history[-3:]:  # Last 3 messages
+            content = message.get('content', '')
+            # Extract key programming terms
+            programming_terms = re.findall(r'\b(function|class|variable|array|list|loop|condition)\b', content.lower())
+            topics.extend(programming_terms)
+        
+        return list(set(topics))
+    
+    def _extract_programming_concepts_from_query(self, query: str) -> List[str]:
+        """Extract programming concepts from query."""
+        concepts = []
+        query_lower = query.lower()
+        
+        # Check against concept patterns
+        concept_keywords = {
+            "algorithms": ["algorithm", "sort", "search", "recursive", "iterate"],
+            "data_structures": ["array", "list", "stack", "queue", "tree", "graph"],
+            "object_oriented": ["class", "object", "inherit", "polymorph", "encapsulat"],
+            "control_flow": ["loop", "condition", "if", "while", "for"],
+            "functions": ["function", "method", "parameter", "return"],
+            "error_handling": ["error", "exception", "debug", "troubleshoot"]
+        }
+        
+        for concept, keywords in concept_keywords.items():
+            if any(keyword in query_lower for keyword in keywords):
+                concepts.append(concept)
+        
+        return concepts
+    
+    def _create_code_focused_query(self, query: str, context: UnifiedRetrievalContext) -> str:
+        """Create code-focused query variant."""
+        if not context.code_snippet:
+            return query
+        
+        code_terms = self._extract_code_terms(context.code_snippet)
+        if code_terms:
+            return f"{query} {' '.join(code_terms[:3])} code example implementation"
+        
+        return query
+    
+    def _create_concept_focused_query(self, query: str, context: UnifiedRetrievalContext) -> str:
+        """Create concept-focused query variant."""
+        concepts = self._extract_programming_concepts_from_query(query)
+        if concepts:
+            return f"{query} {' '.join(concepts)} concept explanation theory"
+        
+        return f"{query} concept explanation understand"
+    
+    def _create_error_focused_query(self, query: str, context: UnifiedRetrievalContext) -> str:
+        """Create error-focused query variant."""
+        if not context.error_message:
+            return query
+        
+        error_type = self._extract_error_type(context.error_message)
+        if error_type:
+            return f"{query} {error_type} error debug fix troubleshoot"
+        
+        return f"{query} error debug troubleshoot"
     
     def _deduplicate_results(self, results: List[RetrievalResult]) -> List[RetrievalResult]:
         """Remove duplicate results based on content ID."""
@@ -689,245 +1035,145 @@ class EducationalRetriever:
         
         return unique_results
     
-    def _extract_code_terms(self, code_snippet: str) -> List[str]:
-        """Extract key terms from code snippet."""
-        # Simple extraction of function names, variable names, etc.
-        terms = []
-        
-        # Function definitions
-        func_matches = re.findall(r'def\s+(\w+)', code_snippet)
-        terms.extend(func_matches)
-        
-        # Class definitions
-        class_matches = re.findall(r'class\s+(\w+)', code_snippet)
-        terms.extend(class_matches)
-        
-        # Common Python keywords
-        python_keywords = ['for', 'while', 'if', 'else', 'try', 'except', 'import']
-        for keyword in python_keywords:
-            if keyword in code_snippet:
-                terms.append(keyword)
-        
-        return terms[:5]  # Return top 5 terms
-    
-    def _extract_error_type(self, error_message: str) -> Optional[str]:
-        """Extract error type from error message."""
-        error_patterns = [
-            r'(\w*Error):',
-            r'(\w*Exception):',
-            r'Traceback.*?(\w*Error)',
-        ]
-        
-        for pattern in error_patterns:
-            match = re.search(pattern, error_message)
-            if match:
-                return match.group(1)
-        
-        return None
-    
     def _expand_keywords(self, query: str) -> str:
-        """Expand keywords using educational synonyms."""
-        words = query.lower().split()
+        """Expand keywords for better retrieval."""
+        # Simple keyword expansion
+        expansions = {
+            "implement": "implement implementation build create develop",
+            "debug": "debug debugging troubleshoot fix error",
+            "algorithm": "algorithm method approach technique",
+            "function": "function method procedure routine",
+            "error": "error exception bug issue problem"
+        }
+        
+        query_words = query.lower().split()
         expanded_words = []
         
-        for word in words:
+        for word in query_words:
             expanded_words.append(word)
-            
-            # Add synonyms if available
-            if word in self.keyword_expansions:
-                expanded_words.extend(self.keyword_expansions[word][:2])  # Add top 2 synonyms
+            if word in expansions:
+                expanded_words.append(expansions[word])
         
         return " ".join(expanded_words)
     
-    def _create_code_focused_query(self, query: str, context: RetrievalContext) -> Optional[str]:
-        """Create a code-focused version of the query."""
-        if not context.code_snippet:
-            return None
-        
-        code_terms = self._extract_code_terms(context.code_snippet)
-        return f"{query} {' '.join(code_terms)} code example implementation"
-    
-    def _create_concept_focused_query(self, query: str, context: RetrievalContext) -> str:
-        """Create a concept-focused version of the query."""
-        concept_terms = ["concept", "explanation", "understand", "theory", "principle"]
-        return f"{query} {' '.join(concept_terms[:2])}"
-    
-    def _extract_topics_from_history(self, history: List[Dict[str, str]]) -> List[str]:
-        """Extract topics from conversation history."""
-        topics = []
-        
-        for turn in history[-3:]:  # Last 3 turns
-            content = turn.get("content", "").lower()
-            
-            # Extract programming-related terms
-            programming_terms = [
-                "algorithm", "function", "class", "loop", "array", "list",
-                "sorting", "searching", "recursion", "iteration"
-            ]
-            
-            for term in programming_terms:
-                if term in content:
-                    topics.append(term)
-        
-        return list(set(topics))  # Remove duplicates
-    
-    def _update_retrieval_metrics(self, 
-                                strategy: RetrievalStrategy,
-                                results: List[ScoredResult],
-                                retrieval_time: float):
-        """Update retrieval performance metrics."""
-        self.retrieval_metrics.total_retrievals += 1
-        
-        # Update timing
-        current_avg = self.retrieval_metrics.average_retrieval_time_ms
-        total_retrievals = self.retrieval_metrics.total_retrievals
-        self.retrieval_metrics.average_retrieval_time_ms = (
-            (current_avg * (total_retrievals - 1) + retrieval_time) / total_retrievals
-        )
-        
-        # Update results count
-        current_avg_results = self.retrieval_metrics.average_results_returned
-        self.retrieval_metrics.average_results_returned = (
-            (current_avg_results * (total_retrievals - 1) + len(results)) / total_retrievals
-        )
-        
-        # Update quality metrics
-        if results:
-            avg_similarity = sum(r.similarity_score for r in results) / len(results)
-            avg_educational = sum(r.educational_relevance_score for r in results) / len(results)
-            
-            current_sim = self.retrieval_metrics.average_similarity_score
-            current_edu = self.retrieval_metrics.average_educational_relevance
-            
-            self.retrieval_metrics.average_similarity_score = (
-                (current_sim * (total_retrievals - 1) + avg_similarity) / total_retrievals
-            )
-            
-            self.retrieval_metrics.average_educational_relevance = (
-                (current_edu * (total_retrievals - 1) + avg_educational) / total_retrievals
-            )
-        
-        # Update strategy metrics
-        strategy_name = strategy.value
-        self.retrieval_metrics.strategy_usage[strategy_name] = (
-            self.retrieval_metrics.strategy_usage.get(strategy_name, 0) + 1
-        )
-        
-        # Store performance for strategy optimization
-        if results:
-            strategy_performance = sum(r.combined_score for r in results) / len(results)
-            self.strategy_performance_history[strategy_name].append(strategy_performance)
-            
-            # Update average performance
-            strategy_history = self.strategy_performance_history[strategy_name]
-            self.retrieval_metrics.strategy_performance[strategy_name] = (
-                sum(strategy_history) / len(strategy_history)
-            )
-    
     def _initialize_strategy_weights(self) -> Dict[str, float]:
-        """Initialize retrieval strategy weights."""
+        """Initialize unified strategy weights."""
         return {
-            "vector_similarity": 0.4,
-            "keyword_matching": 0.2,
-            "educational_context": 0.25,
-            "content_type_match": 0.15
+            "metadata_filtered": 0.7,
+            "agent_specialized": 0.9,
+            "concept_focused": 0.85,
+            "educational_relevance": 0.8,
+            "contextual_adaptive": 0.95
         }
     
     def _initialize_educational_weights(self) -> Dict[str, float]:
-        """Initialize educational scoring weights."""
+        """Initialize educational scoring weights for unified approach."""
         return {
-            "similarity": 0.3,
-            "educational_relevance": 0.35,
-            "context_match": 0.2,
-            "quality": 0.1,
-            "freshness": 0.05
+            "similarity": 0.25,
+            "metadata_match": 0.20,
+            "educational_relevance": 0.20,
+            "context_match": 0.15,
+            "agent_specialization": 0.10,
+            "quality": 0.07,
+            "freshness": 0.03
+        }
+    
+    def _initialize_metadata_weights(self) -> Dict[str, float]:
+        """Initialize metadata filtering weights."""
+        return {
+            "agent_specialization": 0.3,
+            "content_type": 0.25,
+            "difficulty_level": 0.2,
+            "programming_concepts": 0.15,
+            "has_code_examples": 0.05,
+            "has_error_examples": 0.05
         }
     
     def _initialize_concept_similarity(self) -> Dict[str, List[str]]:
         """Initialize concept similarity mappings."""
         return {
-            "algorithms": ["sorting", "searching", "optimization", "complexity", "efficiency"],
-            "data_structures": ["array", "list", "tree", "graph", "hash", "stack", "queue"],
-            "object_oriented": ["class", "object", "inheritance", "polymorphism", "encapsulation"],
-            "functions": ["method", "parameter", "argument", "return", "scope"],
-            "loops": ["iteration", "while", "for", "recursion", "control_flow"],
-            "debugging": ["error", "exception", "troubleshooting", "testing", "validation"]
+            "algorithms": ["sorting", "searching", "recursion", "iteration"],
+            "data_structures": ["arrays", "lists", "trees", "graphs", "stacks", "queues"],
+            "programming": ["coding", "development", "implementation", "software"],
+            "debugging": ["troubleshooting", "error_handling", "testing", "fixing"]
         }
     
     def _initialize_keyword_expansions(self) -> Dict[str, List[str]]:
         """Initialize keyword expansion mappings."""
         return {
-            "implement": ["create", "build", "develop", "code"],
-            "algorithm": ["method", "approach", "technique", "procedure"],
-            "debug": ["fix", "troubleshoot", "resolve", "solve"],
-            "error": ["exception", "bug", "issue", "problem"],
-            "function": ["method", "procedure", "routine"],
-            "loop": ["iteration", "repeat", "cycle"],
-            "variable": ["identifier", "name", "symbol"],
-            "class": ["object", "type", "structure"]
+            "implement": ["build", "create", "develop", "code", "write"],
+            "debug": ["troubleshoot", "fix", "resolve", "diagnose"],
+            "understand": ["learn", "comprehend", "grasp", "know"],
+            "example": ["sample", "demonstration", "illustration", "instance"]
         }
     
-    def get_retrieval_metrics(self) -> RetrievalMetrics:
-        """Get comprehensive retrieval metrics."""
+    def get_retrieval_metrics(self) -> UnifiedRetrievalMetrics:
+        """Get unified retrieval performance metrics."""
         return self.retrieval_metrics
 
 
-# Global retriever instance
-_educational_retriever: Optional[EducationalRetriever] = None
+# Global unified educational retriever instance
+_unified_educational_retriever: Optional[UnifiedEducationalRetriever] = None
 
 
-def get_educational_retriever(reload: bool = False) -> EducationalRetriever:
+def get_educational_retriever(reload: bool = False) -> UnifiedEducationalRetriever:
     """
-    Get global educational retriever instance (singleton pattern).
+    Get global unified educational retriever instance (singleton pattern).
     
     Args:
         reload: Force creation of new retriever instance
         
     Returns:
-        EducationalRetriever instance
+        UnifiedEducationalRetriever instance
     """
-    global _educational_retriever
-    if _educational_retriever is None or reload:
-        _educational_retriever = EducationalRetriever()
-    return _educational_retriever
+    global _unified_educational_retriever
+    if _unified_educational_retriever is None or reload:
+        _unified_educational_retriever = UnifiedEducationalRetriever()
+    return _unified_educational_retriever
 
 
 if __name__ == "__main__":
-    # Educational retriever test
+    # Unified educational retriever test
     try:
         retriever = get_educational_retriever()
         
-        # Test retrieval context
-        test_context = RetrievalContext(
+        # Test unified retrieval context
+        test_context = UnifiedRetrievalContext(
             query="How do I implement binary search algorithm?",
-            agent_specialization="implementation",
-            srl_phase="FORETHOUGHT",
+            agent_specialization=AgentSpecialization.IMPLEMENTATION.value,
+            srl_phase=SRLPhase.FORETHOUGHT.value,
             student_level="intermediate",
-            max_results=3,
-            prefer_code_examples=True
+            prefer_code_examples=True,
+            programming_domain="algorithms",
+            learning_objectives=["understand binary search", "implement efficiently"],
+            max_results=5
         )
         
-        # Test retrieval
+        # Perform unified retrieval
         results = retriever.retrieve_educational_content(test_context)
         
-        print(f"Retrieval test: {len(results)} results returned")
+        print(f"Unified retrieval results: {len(results)} found")
         for i, result in enumerate(results):
-            print(f"  Result {i+1}: Score {result.combined_score:.3f}")
-            print(f"    Content ID: {result.result.content_id}")
-            print(f"    Content Type: {result.result.content_type}")
-            print(f"    Similarity: {result.similarity_score:.3f}")
-            print(f"    Educational Relevance: {result.educational_relevance_score:.3f}")
+            print(f"  {i+1}. {result.result.content_id}")
+            print(f"     Similarity: {result.similarity_score:.3f}")
+            print(f"     Metadata Match: {result.metadata_match_score:.3f}")
+            print(f"     Educational Relevance: {result.educational_relevance_score:.3f}")
+            print(f"     Combined Score: {result.combined_score:.3f}")
+            print(f"     Content Type: {result.result.content_type}")
+            print(f"     Agent Specialization: {result.result.agent_specialization}")
+            print()
         
         # Test metrics
         metrics = retriever.get_retrieval_metrics()
-        print(f"\nRetrieval metrics:")
-        print(f"  Total retrievals: {metrics.total_retrievals}")
-        print(f"  Average time: {metrics.average_retrieval_time_ms:.1f}ms")
-        print(f"  Average results: {metrics.average_results_returned:.1f}")
+        print(f"Unified retrieval metrics:")
+        print(f"  - Total retrievals: {metrics.total_retrievals}")
+        print(f"  - Average time: {metrics.average_retrieval_time_ms:.2f}ms")
+        print(f"  - Average results: {metrics.average_results_returned:.1f}")
+        print(f"  - Strategy usage: {metrics.strategy_usage}")
         
-        print("✅ Educational retriever test completed successfully!")
+        print("✅ Unified educational retriever test completed successfully!")
         
     except Exception as e:
-        print(f"❌ Educational retriever test failed: {e}")
+        print(f"❌ Unified educational retriever test failed: {e}")
         import traceback
         traceback.print_exc()

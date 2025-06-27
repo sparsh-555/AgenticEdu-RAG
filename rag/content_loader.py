@@ -1,25 +1,25 @@
 """
-Educational Content Loader for RAG System
+Unified Educational Content Loader for RAG System
 
 This module handles loading, processing, and preparing educational content for
-the vector store. It supports various content formats, intelligent chunking
+the unified vector store. It supports PDF processing, intelligent chunking
 strategies, and automated metadata extraction optimized for programming education.
 
 Key Features:
-1. Multi-Format Support: Text files, markdown, code examples, and structured content
-2. Intelligent Chunking: Context-aware chunking that preserves educational coherence
-3. Metadata Extraction: Automatic detection of programming concepts and difficulty levels
-4. Agent-Specific Organization: Content classification for specialized agent collections
-5. Incremental Loading: Support for updating and adding new content efficiently
-6. Quality Validation: Content quality checks and educational appropriateness scoring
+1. PDF Support: Process PDF books and documents into educational content
+2. Unified Loading: All content goes into single collection with rich metadata
+3. Intelligent Chunking: Context-aware chunking that preserves educational coherence
+4. Metadata Generation: Comprehensive metadata for content filtering and retrieval
+5. Quality Validation: Content quality checks and educational appropriateness scoring
+6. Incremental Loading: Support for updating and adding new content efficiently
 
 Content Processing Pipeline:
-1. File Discovery: Scan educational content directories
-2. Content Parsing: Extract and clean text content
-3. Concept Detection: Identify programming concepts and topics
-4. Chunking Strategy: Create coherent chunks for vector storage
-5. Metadata Generation: Create rich metadata for educational research
-6. Quality Validation: Ensure content meets educational standards
+1. PDF Processing: Extract and clean text from PDF documents
+2. Content Analysis: Identify programming concepts, difficulty, and content types
+3. Intelligent Chunking: Create coherent chunks for vector storage
+4. Metadata Enrichment: Generate comprehensive metadata for filtering
+5. Quality Validation: Ensure content meets educational standards
+6. Unified Storage: Store all content in single collection with metadata
 """
 
 import os
@@ -33,11 +33,13 @@ from dataclasses import dataclass, field
 from enum import Enum
 import threading
 
+import PyPDF2
+import fitz  # PyMuPDF for better PDF processing
 from pydantic import BaseModel, Field
 
 from .vector_store import (
     ContentMetadata, ContentType, AgentSpecialization, 
-    EducationalVectorStore, get_vector_store
+    UnifiedEducationalVectorStore, get_vector_store
 )
 from ..config.settings import get_settings
 from ..utils.logging_utils import get_logger, LogContext, EventType, create_context
@@ -45,6 +47,7 @@ from ..utils.logging_utils import get_logger, LogContext, EventType, create_cont
 
 class ContentFormat(Enum):
     """Supported content formats for processing."""
+    PDF = "pdf"
     TEXT = "text"
     MARKDOWN = "markdown"
     CODE = "code"
@@ -59,11 +62,12 @@ class ChunkingStrategy(Enum):
     PARAGRAPH = "paragraph"
     CODE_AWARE = "code_aware"
     EDUCATIONAL_UNIT = "educational_unit"
+    PDF_AWARE = "pdf_aware"
 
 
 @dataclass
 class ContentChunk:
-    """A chunk of educational content ready for vector storage."""
+    """A chunk of educational content ready for unified vector storage."""
     chunk_id: str
     content: str
     metadata: ContentMetadata
@@ -80,12 +84,12 @@ class ContentChunk:
 
 
 @dataclass
-class ContentLoadingConfig:
-    """Configuration for content loading process."""
+class UnifiedContentLoadingConfig:
+    """Configuration for unified content loading process."""
     max_chunk_size: int = 1000
     min_chunk_size: int = 200
     chunk_overlap: int = 100
-    chunking_strategy: ChunkingStrategy = ChunkingStrategy.SEMANTIC
+    chunking_strategy: ChunkingStrategy = ChunkingStrategy.PDF_AWARE
     
     # Quality filters
     min_readability_score: float = 0.3
@@ -96,16 +100,21 @@ class ContentLoadingConfig:
     detect_difficulty_automatically: bool = True
     preserve_formatting: bool = True
     
+    # PDF processing options
+    pdf_extract_images: bool = False
+    pdf_extract_tables: bool = True
+    pdf_clean_text: bool = True
+    
     # Performance options
     batch_size: int = 50
     parallel_processing: bool = True
 
 
-class ContentProcessor:
-    """Processes raw content into educational chunks."""
+class UnifiedContentProcessor:
+    """Processes raw content into educational chunks for unified storage."""
     
-    def __init__(self, config: ContentLoadingConfig):
-        """Initialize content processor with configuration."""
+    def __init__(self, config: UnifiedContentLoadingConfig):
+        """Initialize unified content processor with configuration."""
         self.config = config
         self.logger = get_logger()
         
@@ -118,20 +127,63 @@ class ContentProcessor:
         # Difficulty indicators
         self.difficulty_indicators = self._initialize_difficulty_indicators()
         
-        # Quality assessment patterns
-        self.quality_patterns = self._initialize_quality_patterns()
+        # Content type detection patterns
+        self.content_type_patterns = self._initialize_content_type_patterns()
+        
+        # Agent specialization mapping patterns
+        self.agent_specialization_patterns = self._initialize_agent_patterns()
+    
+    def process_pdf_content(self, 
+                           pdf_path: Path, 
+                           base_agent_specialization: AgentSpecialization = AgentSpecialization.SHARED) -> List[ContentChunk]:
+        """
+        Process PDF content into educational chunks.
+        
+        Args:
+            pdf_path: Path to PDF file
+            base_agent_specialization: Default agent specialization
+            
+        Returns:
+            List of processed content chunks
+        """
+        try:
+            # Extract text from PDF
+            pdf_text = self._extract_pdf_text(pdf_path)
+            
+            if not pdf_text.strip():
+                self.logger.log_event(
+                    EventType.WARNING_ISSUED,
+                    f"No text extracted from PDF: {pdf_path}",
+                    level="WARNING"
+                )
+                return []
+            
+            # Process extracted content
+            return self.process_content(
+                content=pdf_text,
+                source_file=str(pdf_path),
+                base_agent_specialization=base_agent_specialization
+            )
+            
+        except Exception as e:
+            self.logger.log_event(
+                EventType.ERROR_OCCURRED,
+                f"PDF processing failed for {pdf_path}: {str(e)}",
+                level="ERROR"
+            )
+            return []
     
     def process_content(self, 
                        content: str, 
                        source_file: str,
-                       base_metadata: ContentMetadata) -> List[ContentChunk]:
+                       base_agent_specialization: AgentSpecialization = AgentSpecialization.SHARED) -> List[ContentChunk]:
         """
-        Process content into educational chunks.
+        Process content into educational chunks for unified storage.
         
         Args:
             content: Raw content text
             source_file: Source file path
-            base_metadata: Base metadata for the content
+            base_agent_specialization: Base agent specialization
             
         Returns:
             List of processed content chunks
@@ -146,50 +198,233 @@ class ContentProcessor:
             # Extract programming concepts
             concepts = self._extract_programming_concepts(cleaned_content)
             
-            # Detect difficulty level if not set
-            if self.config.detect_difficulty_automatically:
-                difficulty = self._detect_difficulty_level(cleaned_content)
-                base_metadata.difficulty_level = difficulty
+            # Detect difficulty level
+            difficulty = self._detect_difficulty_level(cleaned_content)
             
-            # Update metadata with extracted information
-            base_metadata.programming_concepts = concepts
-            base_metadata.content_length = len(cleaned_content)
-            base_metadata.has_code_examples = self._has_code_examples(cleaned_content)
-            base_metadata.source_file = source_file
+            # Determine content type and agent specialization for each section
+            content_sections = self._split_into_sections(cleaned_content)
             
-            # Create chunks based on strategy
-            chunks = self._create_chunks(cleaned_content, base_metadata, content_format)
+            all_chunks = []
             
-            # Validate and score chunks
-            validated_chunks = []
-            for chunk in chunks:
-                if self._validate_chunk_quality(chunk):
-                    validated_chunks.append(chunk)
+            for section_index, section_content in enumerate(content_sections):
+                # Determine specific content type and agent specialization for this section
+                content_type = self._determine_content_type(section_content)
+                agent_specialization = self._determine_agent_specialization(section_content, base_agent_specialization)
+                
+                # Create base metadata for this section
+                base_metadata = ContentMetadata(
+                    content_id=f"{self._generate_content_id(source_file)}_section_{section_index}",
+                    content_type=content_type,
+                    agent_specialization=agent_specialization,
+                    programming_concepts=self._extract_programming_concepts(section_content),
+                    difficulty_level=difficulty,
+                    content_length=len(section_content),
+                    has_code_examples=self._has_code_examples(section_content),
+                    has_error_examples=self._has_error_examples(section_content),
+                    source_file=source_file
+                )
+                
+                # Create chunks for this section
+                section_chunks = self._create_chunks(section_content, base_metadata, content_format)
+                
+                # Validate and score chunks
+                for chunk in section_chunks:
+                    if self._validate_chunk_quality(chunk):
+                        all_chunks.append(chunk)
             
             self.logger.log_event(
                 EventType.KNOWLEDGE_RETRIEVED,
-                f"Processed content: {len(validated_chunks)} chunks from {source_file}",
+                f"Processed unified content: {len(all_chunks)} chunks from {source_file}",
                 extra_data={
                     "source_file": source_file,
                     "original_length": len(content),
-                    "chunks_created": len(chunks),
-                    "chunks_validated": len(validated_chunks),
+                    "sections_processed": len(content_sections),
+                    "chunks_created": len(all_chunks),
                     "concepts_detected": len(concepts)
                 }
             )
             
-            return validated_chunks
+            return all_chunks
             
         except Exception as e:
             self.logger.log_event(
                 EventType.ERROR_OCCURRED,
-                f"Content processing failed for {source_file}: {str(e)}",
+                f"Unified content processing failed for {source_file}: {str(e)}",
                 level="ERROR"
             )
             return []
     
+    def _extract_pdf_text(self, pdf_path: Path) -> str:
+        """Extract text from PDF using PyMuPDF for better quality."""
+        try:
+            # Use PyMuPDF (fitz) for better text extraction
+            doc = fitz.open(str(pdf_path))
+            text_content = ""
+            
+            for page_num in range(len(doc)):
+                page = doc.load_page(page_num)
+                page_text = page.get_text()
+                
+                if self.config.pdf_clean_text:
+                    page_text = self._clean_pdf_text(page_text)
+                
+                text_content += f"\n\n--- Page {page_num + 1} ---\n\n{page_text}"
+            
+            doc.close()
+            return text_content
+            
+        except Exception as e:
+            # Fallback to PyPDF2
+            try:
+                with open(pdf_path, 'rb') as file:
+                    pdf_reader = PyPDF2.PdfReader(file)
+                    text_content = ""
+                    
+                    for page_num in range(len(pdf_reader.pages)):
+                        page = pdf_reader.pages[page_num]
+                        page_text = page.extract_text()
+                        
+                        if self.config.pdf_clean_text:
+                            page_text = self._clean_pdf_text(page_text)
+                        
+                        text_content += f"\n\n--- Page {page_num + 1} ---\n\n{page_text}"
+                    
+                    return text_content
+                    
+            except Exception as fallback_error:
+                self.logger.log_event(
+                    EventType.ERROR_OCCURRED,
+                    f"Both PDF extraction methods failed for {pdf_path}: {str(fallback_error)}",
+                    level="ERROR"
+                )
+                return ""
+    
+    def _clean_pdf_text(self, text: str) -> str:
+        """Clean extracted PDF text."""
+        # Remove excessive whitespace
+        text = re.sub(r'\n\s*\n\s*\n', '\n\n', text)
+        text = re.sub(r' +', ' ', text)
+        
+        # Remove page headers/footers patterns
+        text = re.sub(r'^.*?Page \d+.*?\n', '', text, flags=re.MULTILINE)
+        text = re.sub(r'^\d+\s*\n', '', text, flags=re.MULTILINE)
+        
+        # Fix common PDF extraction issues
+        text = re.sub(r'([a-z])([A-Z])', r'\1 \2', text)  # Add spaces between words
+        text = re.sub(r'(\w)-\s*\n\s*(\w)', r'\1\2', text)  # Fix hyphenated words
+        
+        return text.strip()
+    
+    def _split_into_sections(self, content: str) -> List[str]:
+        """Split content into logical sections for processing."""
+        # Split by headers, major sections, or topics
+        section_patterns = [
+            r'\n\s*Chapter\s+\d+.*?\n',
+            r'\n\s*Section\s+\d+.*?\n',
+            r'\n\s*##+\s+.*?\n',  # Markdown headers
+            r'\n\s*\d+\.\s+[A-Z].*?\n',  # Numbered sections
+            r'\n\s*[A-Z][A-Z\s]{10,}\n',  # All caps headers
+        ]
+        
+        # Try to split by patterns
+        for pattern in section_patterns:
+            matches = list(re.finditer(pattern, content, re.IGNORECASE))
+            if len(matches) > 1:
+                sections = []
+                last_end = 0
+                
+                for match in matches:
+                    if last_end < match.start():
+                        section = content[last_end:match.start()].strip()
+                        if section:
+                            sections.append(section)
+                    last_end = match.start()
+                
+                # Add final section
+                if last_end < len(content):
+                    final_section = content[last_end:].strip()
+                    if final_section:
+                        sections.append(final_section)
+                
+                if len(sections) > 1:
+                    return sections
+        
+        # Fallback: split by double newlines for paragraphs
+        paragraphs = [p.strip() for p in content.split('\n\n') if p.strip()]
+        
+        # Combine small paragraphs into larger sections
+        sections = []
+        current_section = ""
+        
+        for paragraph in paragraphs:
+            if len(current_section) + len(paragraph) > self.config.max_chunk_size * 2:
+                if current_section:
+                    sections.append(current_section)
+                current_section = paragraph
+            else:
+                current_section += "\n\n" + paragraph if current_section else paragraph
+        
+        if current_section:
+            sections.append(current_section)
+        
+        return sections if sections else [content]
+    
+    def _determine_content_type(self, content: str) -> ContentType:
+        """Determine content type based on content analysis."""
+        content_lower = content.lower()
+        
+        # Check content type patterns
+        for content_type, patterns in self.content_type_patterns.items():
+            score = sum(1 for pattern in patterns if pattern in content_lower)
+            if score >= 2:  # Require multiple indicators
+                return ContentType(content_type)
+        
+        # Check for code examples
+        if self._has_code_examples(content):
+            return ContentType.CODE_EXAMPLE
+        
+        # Check for error/debugging content
+        if self._has_error_examples(content):
+            return ContentType.DEBUGGING_RESOURCE
+        
+        # Default based on educational indicators
+        if any(word in content_lower for word in ["concept", "understand", "explain", "theory"]):
+            return ContentType.CONCEPT_EXPLANATION
+        elif any(word in content_lower for word in ["implement", "approach", "strategy", "design"]):
+            return ContentType.IMPLEMENTATION_GUIDE
+        elif any(word in content_lower for word in ["best", "practice", "recommendation", "guideline"]):
+            return ContentType.BEST_PRACTICE
+        
+        return ContentType.GENERAL
+    
+    def _determine_agent_specialization(self, content: str, base_specialization: AgentSpecialization) -> AgentSpecialization:
+        """Determine agent specialization based on content analysis."""
+        content_lower = content.lower()
+        
+        # Check for debugging/performance indicators
+        debugging_indicators = [
+            "debug", "error", "fix", "troubleshoot", "problem", "issue",
+            "exception", "bug", "trace", "stack trace", "performance"
+        ]
+        debugging_score = sum(1 for indicator in debugging_indicators if indicator in content_lower)
+        
+        # Check for implementation/forethought indicators
+        implementation_indicators = [
+            "implement", "design", "plan", "approach", "strategy", "architecture",
+            "algorithm", "method", "solution", "build", "create"
+        ]
+        implementation_score = sum(1 for indicator in implementation_indicators if indicator in content_lower)
+        
+        # Determine specialization based on scores
+        if debugging_score > implementation_score and debugging_score >= 2:
+            return AgentSpecialization.DEBUGGING
+        elif implementation_score > debugging_score and implementation_score >= 2:
+            return AgentSpecialization.IMPLEMENTATION
+        else:
+            return base_specialization  # Use base specialization as default
+    
     def _clean_content(self, content: str) -> str:
-        """Clean and normalize content text."""
+        """Clean and normalize content text for unified processing."""
         # Remove excessive whitespace
         content = re.sub(r'\n\s*\n\s*\n', '\n\n', content)
         content = re.sub(r' +', ' ', content)
@@ -203,6 +438,10 @@ class ContentProcessor:
     def _detect_content_format(self, content: str) -> ContentFormat:
         """Detect the format of content."""
         content_lower = content.lower()
+        
+        # Check for PDF indicators
+        if "--- page" in content_lower:
+            return ContentFormat.PDF
         
         # Check for code indicators
         code_indicators = ['def ', 'class ', 'function', '```', 'import ', 'from ']
@@ -228,7 +467,7 @@ class ContentProcessor:
         return ContentFormat.TEXT
     
     def _extract_programming_concepts(self, content: str) -> List[str]:
-        """Extract programming concepts from content."""
+        """Extract programming concepts from content for unified metadata."""
         concepts = set()
         content_lower = content.lower()
         
@@ -272,12 +511,24 @@ class ContentProcessor:
         
         return any(indicator in content for indicator in code_indicators)
     
+    def _has_error_examples(self, content: str) -> bool:
+        """Check if content contains error examples."""
+        error_indicators = [
+            'error:', 'exception:', 'traceback:', 'syntaxerror',
+            'typeerror', 'indexerror', 'nameerror', 'valueerror'
+        ]
+        
+        content_lower = content.lower()
+        return any(indicator in content_lower for indicator in error_indicators)
+    
     def _create_chunks(self, 
                       content: str, 
                       base_metadata: ContentMetadata,
                       content_format: ContentFormat) -> List[ContentChunk]:
-        """Create chunks based on configured strategy."""
-        if self.config.chunking_strategy == ChunkingStrategy.SEMANTIC:
+        """Create chunks based on configured strategy for unified storage."""
+        if self.config.chunking_strategy == ChunkingStrategy.PDF_AWARE:
+            return self._pdf_aware_chunking(content, base_metadata)
+        elif self.config.chunking_strategy == ChunkingStrategy.SEMANTIC:
             return self._semantic_chunking(content, base_metadata)
         elif self.config.chunking_strategy == ChunkingStrategy.CODE_AWARE:
             return self._code_aware_chunking(content, base_metadata)
@@ -288,8 +539,52 @@ class ContentProcessor:
         else:
             return self._fixed_size_chunking(content, base_metadata)
     
+    def _pdf_aware_chunking(self, content: str, base_metadata: ContentMetadata) -> List[ContentChunk]:
+        """Create chunks that respect PDF structure and page boundaries."""
+        chunks = []
+        
+        # Split by page boundaries first
+        pages = re.split(r'--- Page \d+ ---', content)
+        pages = [p.strip() for p in pages if p.strip()]
+        
+        current_chunk = ""
+        chunk_index = 0
+        
+        for page in pages:
+            # For each page, split by paragraphs or sections
+            paragraphs = page.split('\n\n')
+            
+            for paragraph in paragraphs:
+                paragraph = paragraph.strip()
+                if not paragraph:
+                    continue
+                
+                # Check if adding this paragraph would exceed max size
+                if len(current_chunk) + len(paragraph) > self.config.max_chunk_size and current_chunk:
+                    # Create chunk from current content
+                    chunk = self._create_chunk_with_metadata(
+                        current_chunk, base_metadata, chunk_index, len(pages)
+                    )
+                    chunks.append(chunk)
+                    
+                    # Start new chunk with overlap
+                    overlap_text = self._get_overlap_text(current_chunk)
+                    current_chunk = overlap_text + "\n\n" + paragraph
+                    chunk_index += 1
+                else:
+                    current_chunk += "\n\n" + paragraph if current_chunk else paragraph
+        
+        # Add final chunk
+        if current_chunk:
+            chunk = self._create_chunk_with_metadata(
+                current_chunk, base_metadata, chunk_index, len(pages)
+            )
+            chunks.append(chunk)
+        
+        return chunks
+    
     def _semantic_chunking(self, content: str, base_metadata: ContentMetadata) -> List[ContentChunk]:
-        """Create semantically coherent chunks."""
+        """Create semantically coherent chunks for unified storage."""
         chunks = []
         
         # Split by major sections (headers, double newlines, etc.)
@@ -303,21 +598,21 @@ class ContentProcessor:
             # Check if adding this section would exceed max size
             if len(current_chunk) + len(section) > self.config.max_chunk_size and current_chunk:
                 # Create chunk from current content
-                chunk = self._create_chunk(
+                chunk = self._create_chunk_with_metadata(
                     current_chunk, base_metadata, chunk_index, len(sections)
                 )
                 chunks.append(chunk)
                 
                 # Start new chunk with overlap
                 overlap_text = self._get_overlap_text(current_chunk)
-                current_chunk = overlap_text + section
+                current_chunk = overlap_text + "\n\n" + section
                 chunk_index += 1
             else:
                 current_chunk += "\n\n" + section if current_chunk else section
         
         # Add final chunk
         if current_chunk:
-            chunk = self._create_chunk(
+            chunk = self._create_chunk_with_metadata(
                 current_chunk, base_metadata, chunk_index, len(sections)
             )
             chunks.append(chunk)
@@ -341,7 +636,7 @@ class ContentProcessor:
                 # Code blocks should stay together when possible
                 if len(current_chunk) + len(part) > self.config.max_chunk_size and current_chunk:
                     # Create chunk without code block
-                    chunk = self._create_chunk(
+                    chunk = self._create_chunk_with_metadata(
                         current_chunk, base_metadata, chunk_index, len(parts)
                     )
                     chunks.append(chunk)
@@ -354,7 +649,7 @@ class ContentProcessor:
             else:
                 # Regular text can be split normally
                 if len(current_chunk) + len(part) > self.config.max_chunk_size and current_chunk:
-                    chunk = self._create_chunk(
+                    chunk = self._create_chunk_with_metadata(
                         current_chunk, base_metadata, chunk_index, len(parts)
                     )
                     chunks.append(chunk)
@@ -366,7 +661,7 @@ class ContentProcessor:
         
         # Add final chunk
         if current_chunk:
-            chunk = self._create_chunk(
+            chunk = self._create_chunk_with_metadata(
                 current_chunk, base_metadata, chunk_index, len(parts)
             )
             chunks.append(chunk)
@@ -374,7 +669,7 @@ class ContentProcessor:
         return chunks
     
     def _educational_unit_chunking(self, content: str, base_metadata: ContentMetadata) -> List[ContentChunk]:
-        """Create chunks based on educational units (concepts, examples, exercises)."""
+        """Create chunks based on educational units."""
         chunks = []
         
         # Split by educational markers
@@ -395,7 +690,7 @@ class ContentProcessor:
         
         for i, part in enumerate(parts):
             if len(current_chunk) + len(part) > self.config.max_chunk_size and current_chunk:
-                chunk = self._create_chunk(
+                chunk = self._create_chunk_with_metadata(
                     current_chunk, base_metadata, chunk_index, len(parts)
                 )
                 chunks.append(chunk)
@@ -407,7 +702,7 @@ class ContentProcessor:
         
         # Add final chunk
         if current_chunk:
-            chunk = self._create_chunk(
+            chunk = self._create_chunk_with_metadata(
                 current_chunk, base_metadata, chunk_index, len(parts)
             )
             chunks.append(chunk)
@@ -424,7 +719,7 @@ class ContentProcessor:
         
         for paragraph in paragraphs:
             if len(current_chunk) + len(paragraph) > self.config.max_chunk_size and current_chunk:
-                chunk = self._create_chunk(
+                chunk = self._create_chunk_with_metadata(
                     current_chunk, base_metadata, chunk_index, len(paragraphs)
                 )
                 chunks.append(chunk)
@@ -436,7 +731,7 @@ class ContentProcessor:
         
         # Add final chunk
         if current_chunk:
-            chunk = self._create_chunk(
+            chunk = self._create_chunk_with_metadata(
                 current_chunk, base_metadata, chunk_index, len(paragraphs)
             )
             chunks.append(chunk)
@@ -462,7 +757,7 @@ class ContentProcessor:
             chunk_content = content[start:end].strip()
             
             if len(chunk_content) >= self.config.min_chunk_size:
-                chunk = self._create_chunk(
+                chunk = self._create_chunk_with_metadata(
                     chunk_content, base_metadata, chunk_index, 
                     (len(content) // self.config.max_chunk_size) + 1
                 )
@@ -474,21 +769,21 @@ class ContentProcessor:
         
         return chunks
     
-    def _create_chunk(self, 
-                     content: str, 
-                     base_metadata: ContentMetadata,
-                     chunk_index: int,
-                     total_chunks: int) -> ContentChunk:
-        """Create a content chunk with metadata."""
+    def _create_chunk_with_metadata(self, 
+                                   content: str, 
+                                   base_metadata: ContentMetadata,
+                                   chunk_index: int,
+                                   total_chunks: int) -> ContentChunk:
+        """Create a content chunk with comprehensive metadata for unified storage."""
         # Generate unique chunk ID
         chunk_id = f"{base_metadata.content_id}_chunk_{chunk_index}"
         
-        # Create chunk metadata (copy base metadata)
+        # Create chunk metadata (copy base metadata and enhance)
         chunk_metadata = ContentMetadata(
             content_id=chunk_id,
             content_type=base_metadata.content_type,
             agent_specialization=base_metadata.agent_specialization,
-            programming_concepts=base_metadata.programming_concepts.copy(),
+            programming_concepts=self._extract_programming_concepts(content),  # Re-extract for chunk
             difficulty_level=base_metadata.difficulty_level,
             programming_language=base_metadata.programming_language,
             topic_tags=base_metadata.topic_tags.copy(),
@@ -534,16 +829,6 @@ class ContentProcessor:
                 break
         
         return overlap_text.strip()
-    
-    def _has_error_examples(self, content: str) -> bool:
-        """Check if content contains error examples."""
-        error_indicators = [
-            'error:', 'exception:', 'traceback:', 'syntaxerror',
-            'typeerror', 'indexerror', 'nameerror', 'valueerror'
-        ]
-        
-        content_lower = content.lower()
-        return any(indicator in content_lower for indicator in error_indicators)
     
     def _determine_chunk_type(self, content: str) -> str:
         """Determine the type of chunk."""
@@ -626,6 +911,12 @@ class ContentProcessor:
         
         return True
     
+    def _generate_content_id(self, file_path: str) -> str:
+        """Generate unique content ID for file."""
+        # Use file path hash for consistent IDs
+        hash_object = hashlib.md5(file_path.encode())
+        return f"unified_content_{hash_object.hexdigest()[:12]}"
+    
     def _initialize_concept_patterns(self) -> Dict[str, List[str]]:
         """Initialize programming concept detection patterns."""
         return {
@@ -691,38 +982,67 @@ class ContentProcessor:
             ]
         }
     
-    def _initialize_quality_patterns(self) -> Dict[str, List[str]]:
-        """Initialize quality assessment patterns."""
+    def _initialize_content_type_patterns(self) -> Dict[str, List[str]]:
+        """Initialize content type detection patterns."""
         return {
-            "high_quality": [
-                "example", "demonstrates", "explains", "shows how",
-                "step by step", "clearly", "understand"
+            "implementation_guide": [
+                "implement", "implementation", "approach", "strategy", "method",
+                "build", "create", "design", "plan"
             ],
-            "low_quality": [
-                "todo", "fixme", "placeholder", "incomplete",
-                "broken", "not working"
+            "debugging_resource": [
+                "debug", "debugging", "error", "fix", "troubleshoot", "problem",
+                "issue", "trace", "exception"
+            ],
+            "concept_explanation": [
+                "concept", "theory", "principle", "understand", "explain",
+                "definition", "meaning", "what is"
+            ],
+            "code_example": [
+                "example", "sample", "code", "snippet", "demonstration",
+                "illustration", "show"
+            ],
+            "best_practice": [
+                "best practice", "recommendation", "guideline", "convention",
+                "standard", "should", "recommended"
+            ],
+            "exercise": [
+                "exercise", "practice", "assignment", "problem", "challenge",
+                "task", "try", "do"
+            ]
+        }
+    
+    def _initialize_agent_patterns(self) -> Dict[str, List[str]]:
+        """Initialize agent specialization detection patterns."""
+        return {
+            "implementation": [
+                "implement", "design", "plan", "approach", "strategy",
+                "architecture", "algorithm", "method", "solution", "build"
+            ],
+            "debugging": [
+                "debug", "error", "fix", "troubleshoot", "problem", "issue",
+                "exception", "bug", "trace", "performance", "optimize"
             ]
         }
 
 
-class EducationalContentLoader:
+class UnifiedEducationalContentLoader:
     """
-    Main content loader for educational RAG system.
+    Unified content loader for educational RAG system.
     
-    This class orchestrates the loading, processing, and storage of educational
-    content from various sources into the vector store, with support for
-    different content types and agent specializations.
+    This class loads educational content from PDFs and other sources into
+    a unified vector store with comprehensive metadata for intelligent
+    content filtering and retrieval.
     """
     
-    def __init__(self, config: Optional[ContentLoadingConfig] = None):
-        """Initialize the content loader."""
-        self.config = config or ContentLoadingConfig()
+    def __init__(self, config: Optional[UnifiedContentLoadingConfig] = None):
+        """Initialize the unified content loader."""
+        self.config = config or UnifiedContentLoadingConfig()
         self.logger = get_logger()
         self.vector_store = get_vector_store()
-        self.processor = ContentProcessor(self.config)
+        self.processor = UnifiedContentProcessor(self.config)
         
-        # Content directories
-        self.content_dirs = self._initialize_content_directories()
+        # Content source directory
+        self.content_dir = Path("data/pdfs")
         
         # Loading statistics
         self.loading_stats = {
@@ -735,13 +1055,13 @@ class EducationalContentLoader:
         
         self.logger.log_event(
             EventType.COMPONENT_INIT,
-            "Educational content loader initialized",
+            "Unified educational content loader initialized",
             extra_data={"chunking_strategy": self.config.chunking_strategy.value}
         )
     
-    def load_all_content(self, force_reload: bool = False) -> Dict[str, Any]:
+    def load_pdf_books(self, force_reload: bool = False) -> Dict[str, Any]:
         """
-        Load all educational content from configured directories.
+        Load educational content from PDF books in the data/pdfs directory.
         
         Args:
             force_reload: Whether to reload content even if already processed
@@ -754,7 +1074,7 @@ class EducationalContentLoader:
         try:
             self.logger.log_event(
                 EventType.KNOWLEDGE_RETRIEVED,
-                "Starting full content loading process",
+                "Starting unified PDF content loading",
                 extra_data={"force_reload": force_reload}
             )
             
@@ -767,15 +1087,35 @@ class EducationalContentLoader:
                 "processing_time_ms": 0.0
             }
             
-            # Process each content directory
-            for specialization, directory_path in self.content_dirs.items():
-                if directory_path.exists():
-                    self._load_directory_content(directory_path, specialization, force_reload)
-                else:
+            # Ensure PDF directory exists
+            self.content_dir.mkdir(parents=True, exist_ok=True)
+            
+            # Find all PDF files
+            pdf_files = list(self.content_dir.glob("*.pdf"))
+            
+            if not pdf_files:
+                self.logger.log_event(
+                    EventType.WARNING_ISSUED,
+                    f"No PDF files found in {self.content_dir}",
+                    level="WARNING"
+                )
+                return {
+                    "status": "warning",
+                    "message": f"No PDF files found in {self.content_dir}",
+                    **self.loading_stats
+                }
+            
+            # Process each PDF file
+            for pdf_path in pdf_files:
+                try:
+                    self._load_pdf_file(pdf_path)
+                    self.loading_stats["files_processed"] += 1
+                except Exception as e:
+                    self.loading_stats["errors_encountered"] += 1
                     self.logger.log_event(
-                        EventType.WARNING_ISSUED,
-                        f"Content directory not found: {directory_path}",
-                        level="WARNING"
+                        EventType.ERROR_OCCURRED,
+                        f"Failed to load PDF {pdf_path}: {str(e)}",
+                        level="ERROR"
                     )
             
             # Calculate total processing time
@@ -784,7 +1124,7 @@ class EducationalContentLoader:
             
             self.logger.log_event(
                 EventType.KNOWLEDGE_RETRIEVED,
-                "Content loading completed",
+                "Unified PDF content loading completed",
                 extra_data=self.loading_stats
             )
             
@@ -796,7 +1136,7 @@ class EducationalContentLoader:
         except Exception as e:
             self.logger.log_event(
                 EventType.ERROR_OCCURRED,
-                f"Content loading failed: {str(e)}",
+                f"Unified content loading failed: {str(e)}",
                 level="ERROR"
             )
             
@@ -806,83 +1146,18 @@ class EducationalContentLoader:
                 **self.loading_stats
             }
     
-    def _initialize_content_directories(self) -> Dict[str, Path]:
-        """Initialize content directory mappings."""
-        base_dir = Path("data/educational_content")
-        
-        return {
-            "implementation": base_dir / "implementation_guides",
-            "debugging": base_dir / "debugging_resources", 
-            "shared": base_dir / "general_programming"
-        }
-    
-    def _load_directory_content(self, 
-                               directory: Path,
-                               specialization: str,
-                               force_reload: bool):
-        """Load content from a specific directory."""
+    def _load_pdf_file(self, pdf_path: Path):
+        """Load and process content from a single PDF file."""
         try:
-            # Find all text files in directory
-            text_files = list(directory.glob("*.txt"))
-            md_files = list(directory.glob("*.md"))
-            all_files = text_files + md_files
+            # Determine base agent specialization from filename
+            base_specialization = self._determine_base_specialization(pdf_path.name)
             
-            self.logger.log_event(
-                EventType.KNOWLEDGE_RETRIEVED,
-                f"Loading {len(all_files)} files from {specialization} directory",
-                extra_data={"directory": str(directory), "file_count": len(all_files)}
-            )
-            
-            for file_path in all_files:
-                try:
-                    self._load_file_content(file_path, specialization)
-                    self.loading_stats["files_processed"] += 1
-                except Exception as e:
-                    self.loading_stats["errors_encountered"] += 1
-                    self.logger.log_event(
-                        EventType.ERROR_OCCURRED,
-                        f"Failed to load file {file_path}: {str(e)}",
-                        level="ERROR"
-                    )
-                    
-        except Exception as e:
-            self.logger.log_event(
-                EventType.ERROR_OCCURRED,
-                f"Failed to load directory {directory}: {str(e)}",
-                level="ERROR"
-            )
-    
-    def _load_file_content(self, file_path: Path, specialization: str):
-        """Load and process content from a single file."""
-        try:
-            # Read file content
-            with open(file_path, 'r', encoding='utf-8') as f:
-                content = f.read()
-            
-            if not content.strip():
-                return
-            
-            # Determine content type and agent specialization
-            content_type = self._determine_content_type(file_path.name, content)
-            agent_spec = self._map_specialization(specialization)
-            
-            # Create base metadata
-            content_id = self._generate_content_id(file_path)
-            base_metadata = ContentMetadata(
-                content_id=content_id,
-                content_type=content_type,
-                agent_specialization=agent_spec,
-                source_file=str(file_path)
-            )
-            
-            # Process content into chunks
-            chunks = self.processor.process_content(
-                content, str(file_path), base_metadata
-            )
+            # Process PDF content into chunks
+            chunks = self.processor.process_pdf_content(pdf_path, base_specialization)
             
             self.loading_stats["chunks_created"] += len(chunks)
             
-            # Store chunks in vector store
+            # Store chunks in unified vector store
             stored_count = 0
             for chunk in chunks:
                 if self.vector_store.add_content(chunk.content, chunk.metadata):
@@ -892,10 +1167,10 @@ class EducationalContentLoader:
             
             self.logger.log_event(
                 EventType.KNOWLEDGE_RETRIEVED,
-                f"Loaded file: {file_path.name} -> {stored_count}/{len(chunks)} chunks stored",
+                f"Loaded PDF: {pdf_path.name} -> {stored_count}/{len(chunks)} chunks stored",
                 extra_data={
-                    "file_path": str(file_path),
-                    "content_type": content_type.value,
+                    "pdf_path": str(pdf_path),
+                    "base_specialization": base_specialization.value,
                     "chunks_created": len(chunks),
                     "chunks_stored": stored_count
                 }
@@ -904,153 +1179,74 @@ class EducationalContentLoader:
         except Exception as e:
             self.logger.log_event(
                 EventType.ERROR_OCCURRED,
-                f"Failed to process file {file_path}: {str(e)}",
+                f"Failed to process PDF {pdf_path}: {str(e)}",
                 level="ERROR"
             )
             raise
     
-    def _determine_content_type(self, filename: str, content: str) -> ContentType:
-        """Determine content type based on filename and content."""
+    def _determine_base_specialization(self, filename: str) -> AgentSpecialization:
+        """Determine base agent specialization from PDF filename."""
         filename_lower = filename.lower()
-        content_lower = content.lower()
         
-        # Check filename patterns
-        if "debug" in filename_lower or "error" in filename_lower:
-            return ContentType.DEBUGGING_RESOURCE
-        elif "implement" in filename_lower or "approach" in filename_lower:
-            return ContentType.IMPLEMENTATION_GUIDE
-        elif "example" in filename_lower:
-            return ContentType.CODE_EXAMPLE
-        elif "practice" in filename_lower or "exercise" in filename_lower:
-            return ContentType.EXERCISE
-        elif "best" in filename_lower and "practice" in filename_lower:
-            return ContentType.BEST_PRACTICE
+        # Check for debugging/troubleshooting indicators
+        if any(word in filename_lower for word in ["debug", "troubleshoot", "error", "fix", "problem"]):
+            return AgentSpecialization.DEBUGGING
         
-        # Check content patterns
-        if any(word in content_lower for word in ["error", "debug", "fix", "troubleshoot"]):
-            return ContentType.DEBUGGING_RESOURCE
-        elif any(word in content_lower for word in ["implement", "approach", "design", "strategy"]):
-            return ContentType.IMPLEMENTATION_GUIDE
-        elif "```" in content or "example:" in content_lower:
-            return ContentType.CODE_EXAMPLE
-        elif any(word in content_lower for word in ["concept", "understand", "explain"]):
-            return ContentType.CONCEPT_EXPLANATION
+        # Check for implementation/design indicators
+        if any(word in filename_lower for word in ["implement", "design", "approach", "guide", "method"]):
+            return AgentSpecialization.IMPLEMENTATION
         
-        return ContentType.GENERAL
-    
-    def _map_specialization(self, specialization: str) -> AgentSpecialization:
-        """Map directory specialization to agent specialization."""
-        mapping = {
-            "implementation": AgentSpecialization.IMPLEMENTATION,
-            "debugging": AgentSpecialization.DEBUGGING,
-            "shared": AgentSpecialization.SHARED
-        }
-        
-        return mapping.get(specialization, AgentSpecialization.SHARED)
-    
-    def _generate_content_id(self, file_path: Path) -> str:
-        """Generate unique content ID for file."""
-        # Use file path hash for consistent IDs
-        path_str = str(file_path.absolute())
-        hash_object = hashlib.md5(path_str.encode())
-        return f"content_{hash_object.hexdigest()[:12]}"
+        # Default to shared
+        return AgentSpecialization.SHARED
     
     def get_loading_stats(self) -> Dict[str, Any]:
-        """Get content loading statistics."""
+        """Get unified content loading statistics."""
         return self.loading_stats.copy()
 
 
-# Global content loader instance
-_content_loader: Optional[EducationalContentLoader] = None
+# Global unified content loader instance
+_unified_content_loader: Optional[UnifiedEducationalContentLoader] = None
 
 
-def get_content_loader(config: Optional[ContentLoadingConfig] = None, 
-                      reload: bool = False) -> EducationalContentLoader:
+def get_content_loader(config: Optional[UnifiedContentLoadingConfig] = None, 
+                      reload: bool = False) -> UnifiedEducationalContentLoader:
     """
-    Get global content loader instance (singleton pattern).
+    Get global unified content loader instance (singleton pattern).
     
     Args:
         config: Content loading configuration
         reload: Force creation of new loader instance
         
     Returns:
-        EducationalContentLoader instance
+        UnifiedEducationalContentLoader instance
     """
-    global _content_loader
-    if _content_loader is None or reload:
-        _content_loader = EducationalContentLoader(config)
-    return _content_loader
+    global _unified_content_loader
+    if _unified_content_loader is None or reload:
+        _unified_content_loader = UnifiedEducationalContentLoader(config)
+    return _unified_content_loader
 
 
 if __name__ == "__main__":
-    # Content loader test
+    # Unified content loader test
     try:
-        # Create test content directory structure
-        test_dir = Path("test_content")
-        test_dir.mkdir(exist_ok=True)
+        # Test with a sample PDF (if available)
+        loader = get_content_loader()
         
-        # Create sample content
-        sample_content = """
-        # Binary Search Algorithm
+        # Load PDF content
+        result = loader.load_pdf_books()
         
-        Binary search is an efficient algorithm for finding an item from a sorted list.
-        It works by repeatedly dividing the search interval in half.
+        print(f"PDF loading result: {result['status']}")
+        print(f"Files processed: {result.get('files_processed', 0)}")
+        print(f"Chunks created: {result.get('chunks_created', 0)}")
+        print(f"Chunks stored: {result.get('chunks_stored', 0)}")
+        print(f"Processing time: {result.get('processing_time_ms', 0):.2f}ms")
         
-        ## Implementation
+        if result.get('errors_encountered', 0) > 0:
+            print(f"Errors encountered: {result['errors_encountered']}")
         
-        Here's a simple implementation:
-        
-        ```python
-        def binary_search(arr, target):
-            left, right = 0, len(arr) - 1
-            
-            while left <= right:
-                mid = (left + right) // 2
-                if arr[mid] == target:
-                    return mid
-                elif arr[mid] < target:
-                    left = mid + 1
-                else:
-                    right = mid - 1
-            
-            return -1
-        ```
-        
-        This algorithm has O(log n) time complexity, making it very efficient for large datasets.
-        """
-        
-        test_file = test_dir / "binary_search.md"
-        with open(test_file, 'w') as f:
-            f.write(sample_content)
-        
-        # Test content processor
-        config = ContentLoadingConfig(
-            max_chunk_size=500,
-            chunking_strategy=ChunkingStrategy.SEMANTIC
-        )
-        
-        processor = ContentProcessor(config)
-        
-        base_metadata = ContentMetadata(
-            content_id="test_content",
-            content_type=ContentType.IMPLEMENTATION_GUIDE,
-            agent_specialization=AgentSpecialization.IMPLEMENTATION
-        )
-        
-        chunks = processor.process_content(sample_content, str(test_file), base_metadata)
-        
-        print(f"Content processor test: {len(chunks)} chunks created")
-        for i, chunk in enumerate(chunks):
-            print(f"  Chunk {i}: {len(chunk.content)} chars, "
-                  f"quality: {chunk.educational_value:.2f}")
-        
-        # Clean up
-        test_file.unlink()
-        test_dir.rmdir()
-        
-        print("✅ Content loader test completed successfully!")
+        print("✅ Unified content loader test completed!")
         
     except Exception as e:
-        print(f"❌ Content loader test failed: {e}")
+        print(f"❌ Unified content loader test failed: {e}")
         import traceback
         traceback.print_exc()
