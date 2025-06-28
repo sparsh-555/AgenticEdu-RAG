@@ -303,8 +303,33 @@ class OpenAIClient:
             # Make API call
             completion: ChatCompletion = self.client.chat.completions.create(**request_params)
             
-            # Process response
-            content = completion.choices[0].message.content or ""
+            # Process response with safe content extraction
+            if not completion.choices:
+                raise OpenAIError("No choices in completion response", APIErrorType.INVALID_REQUEST)
+            
+            message = completion.choices[0].message
+            content = ""
+            
+            # Handle different response types safely
+            if hasattr(message, 'content') and message.content:
+                content = message.content
+            elif hasattr(message, 'tool_calls') and message.tool_calls:
+                # Handle function calling responses
+                content = f"Function call: {message.tool_calls[0].function.name}"
+                self.logger.log_event(
+                    EventType.LLM_RESPONSE,
+                    "Received function call response instead of text content",
+                    context=context,
+                    level="WARNING"
+                )
+            else:
+                content = "No content available in response"
+                self.logger.log_event(
+                    EventType.ERROR_OCCURRED,
+                    "OpenAI response missing both content and tool_calls",
+                    context=context,
+                    level="WARNING"
+                )
             
             # Extract token usage
             usage = completion.usage

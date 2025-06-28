@@ -322,8 +322,15 @@ Respond with JSON:
                     max_tokens=500
                 )
                 
-                # Parse response
-                response_text = response.choices[0].message.content
+                # Parse response with safe content extraction
+                if not response.choices:
+                    raise ValueError("No choices in OpenAI response")
+                
+                message = response.choices[0].message
+                if hasattr(message, 'content') and message.content:
+                    response_text = message.content
+                else:
+                    raise ValueError("OpenAI response missing content")
                 classification_result = json.loads(response_text)
                 
                 # Create SRL label

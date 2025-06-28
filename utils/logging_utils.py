@@ -492,12 +492,18 @@ class EducationalLogger:
                                context: LogContext,
                                extra_data: Dict[str, Any]):
         """Track educational events for research analysis."""
+        # Filter out conflicting parameters from extra_data to avoid duplicate keyword arguments
+        filtered_extra_data = {
+            k: v for k, v in extra_data.items() 
+            if k in EducationalEvent.__fields__ and k not in ['event_type', 'srl_phase', 'student_level', 'session_hash']
+        }
+        
         educational_event = EducationalEvent(
             event_type=event_type.value,
             srl_phase=context.learning_phase,
             student_level=context.student_level,
             session_hash=self._hash_sensitive_data(context.session_id) if context.session_id else None,
-            **{k: v for k, v in extra_data.items() if k in EducationalEvent.__fields__}
+            **filtered_extra_data
         )
         
         self.log_educational_event(educational_event)

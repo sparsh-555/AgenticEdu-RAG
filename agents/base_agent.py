@@ -329,7 +329,9 @@ class BaseAgent(ABC):
             # Extract context from unified response
             context = []
             for result in response.results:
-                context.append(result["content"])
+                content = result.get("content", "") if isinstance(result, dict) else getattr(result, "content", "")
+                if content:
+                    context.append(content)
             
             self.logger.log_rag_operation(
                 operation="unified_context_retrieval",
@@ -420,6 +422,16 @@ class BaseAgent(ABC):
             messages=messages,
             context=agent_input.context
         )
+        
+        # Safely extract content with additional error handling
+        if api_response is None:
+            raise RuntimeError("OpenAI client returned None response")
+            
+        if not hasattr(api_response, 'content'):
+            raise RuntimeError("OpenAI response missing content attribute")
+            
+        if api_response.content is None:
+            raise RuntimeError("OpenAI response content is None")
         
         return api_response.content
     

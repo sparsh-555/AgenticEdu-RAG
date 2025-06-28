@@ -511,6 +511,10 @@ class OrchestratorAgent:
             # Process with the agent
             agent_response = agent.process_query(agent_input)
             
+            # Validate agent response before storing
+            if agent_response is None:
+                raise ValueError(f"{agent_name} agent returned None response")
+            
             # Store agent response in state
             state["agent_response"] = {
                 "content": agent_response.content,
@@ -532,10 +536,19 @@ class OrchestratorAgent:
             state["error_occurred"] = True
             state["error_message_internal"] = f"Agent processing failed: {str(e)}"
             
+            # Add detailed debug information
+            import traceback
+            error_trace = traceback.format_exc()
+            
             self.logger.log_event(
                 EventType.AGENT_ERROR,
                 f"{agent_name} agent processing failed: {str(e)}",
-                level="ERROR"
+                level="ERROR",
+                extra_data={
+                    "error_type": type(e).__name__,
+                    "error_trace": error_trace,
+                    "agent_name": agent_name
+                }
             )
         
         return state
@@ -668,12 +681,17 @@ class OrchestratorAgent:
     def _perform_quality_checks(self, state: WorkflowState) -> Dict[str, Any]:
         """Perform comprehensive quality checks on the agent response."""
         agent_response = state["agent_response"]
+        
+        # Safe access to agent response content with error handling
+        content = agent_response.get("content", "") if agent_response else ""
+        confidence = agent_response.get("confidence", 0.0) if agent_response else 0.0
+        
         checks = {
-            "content_length_ok": len(agent_response["content"]) > 50,
-            "confidence_adequate": agent_response["confidence"] > 0.3,
-            "educational_metadata_present": bool(agent_response.get("educational_metadata")),
-            "response_type_valid": agent_response.get("response_type") in [rt.value for rt in ResponseType],
-            "processing_time_reasonable": agent_response.get("processing_time_ms", 0) < 25000
+            "content_length_ok": len(content) > 50,
+            "confidence_adequate": confidence > 0.3,
+            "educational_metadata_present": bool(agent_response.get("educational_metadata")) if agent_response else False,
+            "response_type_valid": agent_response.get("response_type") in [rt.value for rt in ResponseType] if agent_response else False,
+            "processing_time_reasonable": agent_response.get("processing_time_ms", 0) < 25000 if agent_response else False
         }
         
         checks["overall_passed"] = all(checks.values())
@@ -739,9 +757,9 @@ I'm here to help with your programming learning journey. Feel free to try asking
                                    workflow_id: str,
                                    start_time: float) -> OrchestratorResponse:
         """Build the final orchestrator response from workflow state."""
-        agent_response = final_state.get("agent_response", {})
-        classification_result = final_state.get("classification_result", {})
-        performance_metrics = final_state.get("performance_metrics", {})
+        agent_response = final_state.get("agent_response") or {}
+        classification_result = final_state.get("classification_result") or {}
+        performance_metrics = final_state.get("performance_metrics") or {}
         
         # Determine conversation turn
         conversation_turn = 1
