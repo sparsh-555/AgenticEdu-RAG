@@ -38,7 +38,7 @@ from openai.types import CreateEmbeddingResponse
 from pydantic import BaseModel, Field
 import tiktoken
 
-from ..config.settings import get_settings
+from config.settings import get_settings
 from .logging_utils import get_logger, LogContext, EventType, create_context
 
 

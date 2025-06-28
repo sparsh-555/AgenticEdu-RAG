@@ -29,8 +29,8 @@ import re
 import ast
 
 from .base_agent import BaseAgent, AgentType, AgentInput, AgentResponse, ResponseType
-from ..utils.logging_utils import get_logger, LogContext, EventType
-from ..config.settings import get_settings
+from utils.logging_utils import get_logger, LogContext, EventType
+from config.settings import get_settings
 
 
 class DebuggingStrategy(Enum):

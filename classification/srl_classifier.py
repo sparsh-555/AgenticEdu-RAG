@@ -37,9 +37,9 @@ from .classification_prompts import (
     get_confidence_adjusted_prompt,
     CLASSIFICATION_EXAMPLES
 )
-from ..utils.api_utils import get_openai_client, ClassificationResult, OpenAIError
-from ..utils.logging_utils import get_logger, LogContext, EventType, create_context
-from ..config.settings import get_settings
+from utils.api_utils import get_openai_client, OpenAIError
+from utils.logging_utils import get_logger, LogContext, EventType, create_context
+from config.settings import get_settings
 
 
 class SRLPhase(Enum):

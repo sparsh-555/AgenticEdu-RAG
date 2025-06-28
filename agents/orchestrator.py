@@ -45,12 +45,12 @@ from typing_extensions import TypedDict, Annotated
 from .base_agent import BaseAgent, AgentType, AgentInput, AgentResponse, ResponseType
 from .implementation_agent import ImplementationAgent
 from .debugging_agent import DebuggingAgent
-from ..classification.srl_classifier import (
+from classification.srl_classifier import (
     get_srl_classifier, SRLClassifier, ClassificationContext, SRLPhase
 )
-from ..utils.logging_utils import get_logger, LogContext, EventType, create_context
-from ..utils.api_utils import get_openai_client
-from ..config.settings import get_settings
+from utils.logging_utils import get_logger, LogContext, EventType, create_context
+from utils.api_utils import get_openai_client
+from config.settings import get_settings
 
 
 class WorkflowState(TypedDict):

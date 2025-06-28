@@ -38,9 +38,9 @@ from chromadb.utils import embedding_functions
 import numpy as np
 from pydantic import BaseModel, Field
 
-from ..config.settings import get_settings
-from ..utils.logging_utils import get_logger, LogContext, EventType, create_context
-from ..utils.api_utils import get_openai_client
+from config.settings import get_settings
+from utils.logging_utils import get_logger, LogContext, EventType, create_context
+from utils.api_utils import get_openai_client
 
 
 class ContentType(Enum):
@@ -92,25 +92,28 @@ class ContentMetadata:
     updated_timestamp: float = field(default_factory=time.time)
     
     def to_dict(self) -> Dict[str, Any]:
-        """Convert metadata to dictionary for storage."""
-        return {
-            "content_id": self.content_id,
-            "content_type": self.content_type.value,
-            "agent_specialization": self.agent_specialization.value,
-            "programming_concepts": self.programming_concepts,
-            "difficulty_level": self.difficulty_level,
-            "programming_language": self.programming_language,
-            "topic_tags": self.topic_tags,
-            "content_length": self.content_length,
-            "has_code_examples": self.has_code_examples,
-            "has_error_examples": self.has_error_examples,
-            "retrieval_count": self.retrieval_count,
-            "last_accessed": self.last_accessed,
-            "effectiveness_score": self.effectiveness_score,
-            "source_file": self.source_file,
-            "created_timestamp": self.created_timestamp,
-            "updated_timestamp": self.updated_timestamp
-        }
+        """Convert metadata to dictionary for storage, handling None values."""
+        # Filter out None values and convert lists to strings
+        result = {}
+        
+        result["content_id"] = self.content_id
+        result["content_type"] = self.content_type.value
+        result["agent_specialization"] = self.agent_specialization.value
+        result["programming_concepts"] = ",".join(self.programming_concepts) if self.programming_concepts else ""
+        result["difficulty_level"] = self.difficulty_level or "medium"
+        result["programming_language"] = self.programming_language or "general"
+        result["topic_tags"] = ",".join(self.topic_tags) if self.topic_tags else ""
+        result["content_length"] = self.content_length or 0
+        result["has_code_examples"] = bool(self.has_code_examples)
+        result["has_error_examples"] = bool(self.has_error_examples)
+        result["retrieval_count"] = self.retrieval_count or 0
+        result["last_accessed"] = self.last_accessed or 0.0
+        result["effectiveness_score"] = self.effectiveness_score or 0.0
+        result["source_file"] = self.source_file or ""
+        result["created_timestamp"] = self.created_timestamp or 0.0
+        result["updated_timestamp"] = self.updated_timestamp or 0.0
+        
+        return result
     
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> 'ContentMetadata':
@@ -669,7 +672,9 @@ class UnifiedEducationalVectorStore:
         # For programming concepts, we'd need to use a more complex filter
         # ChromaDB supports array containment queries
         if programming_concepts:
-            # This will match documents that contain any of the specified concepts
+            # Search for documents that contain any of the specified concepts
+            # Since programming_concepts is now stored as comma-separated string, 
+            # we'll search for the first concept as a substring
             where_filter["programming_concepts"] = {"$contains": programming_concepts[0]}
         
         return where_filter if where_filter else None

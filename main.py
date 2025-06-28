@@ -31,6 +31,12 @@ import json
 from pathlib import Path
 from typing import Dict, List, Optional, Any
 
+# Add the current directory to Python path to enable absolute imports
+import os
+current_dir = os.path.dirname(os.path.abspath(__file__))
+if current_dir not in sys.path:
+    sys.path.insert(0, current_dir)
+
 # Import unified system components
 from agents.orchestrator import OrchestratorAgent, OrchestratorConfig
 from classification.srl_classifier import get_srl_classifier, ClassificationContext, SRLPhase
@@ -38,7 +44,7 @@ from rag.knowledge_base import (
     get_knowledge_base, initialize_knowledge_base, retrieve_for_agent, 
     get_knowledge_base_stats, UnifiedRetrievalRequest, UnifiedEducationalKnowledgeBase
 )
-from rag.content_loader import get_content_loader, UnifiedContentLoadingConfig
+from rag.content_loader import get_content_loader, UnifiedContentLoadingConfig, ChunkingStrategy
 from rag.vector_store import get_vector_store, AgentSpecialization, ContentType
 from utils.logging_utils import get_logger, create_context, EventType
 from utils.api_utils import get_openai_client
@@ -142,7 +148,7 @@ class UnifiedAgenticEduRAGSystem:
             # Step 3: Initialize unified content loader
             self.logger.log_event(EventType.SYSTEM_START, "Initializing unified content loader")
             loader_config = UnifiedContentLoadingConfig(
-                chunking_strategy="pdf_aware",
+                chunking_strategy=ChunkingStrategy.PDF_AWARE,
                 max_chunk_size=1000,
                 min_chunk_size=200
             )

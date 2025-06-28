@@ -29,8 +29,8 @@ from enum import Enum
 import re
 
 from .base_agent import BaseAgent, AgentType, AgentInput, AgentResponse, ResponseType
-from ..utils.logging_utils import get_logger, LogContext, EventType
-from ..config.settings import get_settings
+from utils.logging_utils import get_logger, LogContext, EventType
+from config.settings import get_settings
 
 
 class ImplementationStrategy(Enum):
@@ -731,7 +731,7 @@ Focus on building understanding and thinking skills, not just solving immediate 
 if __name__ == "__main__":
     # Implementation agent test
     try:
-        from ..utils.api_utils import get_openai_client
+        from utils.api_utils import get_openai_client
         
         agent = ImplementationAgent()
         

@@ -38,7 +38,7 @@ from functools import wraps
 from loguru import logger as loguru_logger
 from pydantic import BaseModel, Field
 
-from ..config.settings import get_settings
+from config.settings import get_settings
 
 
 class EventType(Enum):
@@ -230,7 +230,7 @@ class EducationalLogger:
             level="DEBUG",
             rotation="100 MB",
             retention="30 days",
-            compression="gzip",
+            compression="gz",
             serialize=True,  # JSON format
             enqueue=True     # Thread-safe
         )
@@ -242,7 +242,7 @@ class EducationalLogger:
             level="INFO",
             rotation="50 MB",
             retention="90 days",  # Keep educational data longer for research
-            compression="gzip",
+            compression="gz",
             filter=lambda record: "educational_event" in record["extra"],
             enqueue=True
         )
@@ -254,7 +254,7 @@ class EducationalLogger:
             level="WARNING",
             rotation="10 MB",
             retention="180 days",
-            compression="gzip",
+            compression="gz",
             enqueue=True
         )
     

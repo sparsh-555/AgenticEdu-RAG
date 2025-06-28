@@ -37,9 +37,9 @@ from .vector_store import (
     UnifiedEducationalVectorStore, get_vector_store, RetrievalResult,
     ContentType, AgentSpecialization
 )
-from ..classification.srl_classifier import SRLPhase
-from ..utils.logging_utils import get_logger, LogContext, EventType, create_context
-from ..config.settings import get_settings
+from classification.srl_classifier import SRLPhase
+from utils.logging_utils import get_logger, LogContext, EventType, create_context
+from config.settings import get_settings
 
 
 class UnifiedRetrievalStrategy(Enum):

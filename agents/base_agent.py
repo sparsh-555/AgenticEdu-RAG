@@ -33,9 +33,9 @@ import json
 
 from pydantic import BaseModel, Field
 
-from ..config.settings import get_settings
-from ..utils.logging_utils import get_logger, LogContext, EventType, create_context
-from ..utils.api_utils import get_openai_client, APIResponse, OpenAIClient
+from config.settings import get_settings
+from utils.logging_utils import get_logger, LogContext, EventType, create_context
+from utils.api_utils import get_openai_client, APIResponse, OpenAIClient
 
 
 class AgentType(Enum):
@@ -304,7 +304,7 @@ class BaseAgent(ABC):
         
         try:
             # Import unified knowledge base retrieval function
-            from ..rag.knowledge_base import retrieve_for_agent
+            from rag.knowledge_base import retrieve_for_agent
             
             # Create context for unified retrieval
             retrieval_context = {
