@@ -119,9 +119,9 @@ class ContentMetadata:
     def from_dict(cls, data: Dict[str, Any]) -> 'ContentMetadata':
         """Create metadata from dictionary."""
         return cls(
-            content_id=data["content_id"],
-            content_type=ContentType(data["content_type"]),
-            agent_specialization=AgentSpecialization(data["agent_specialization"]),
+            content_id=data.get("content_id", f"unknown_{int(time.time())}"),
+            content_type=ContentType(data.get("content_type", "general")),
+            agent_specialization=AgentSpecialization(data.get("agent_specialization", "shared")),
             programming_concepts=data.get("programming_concepts", []),
             difficulty_level=data.get("difficulty_level", "intermediate"),
             programming_language=data.get("programming_language"),
@@ -658,26 +658,32 @@ class UnifiedEducationalVectorStore:
                                      difficulty_level: Optional[str],
                                      programming_concepts: Optional[List[str]]) -> Optional[Dict[str, Any]]:
         """Build metadata filter for unified collection search."""
-        where_filter = {}
+        # RESEARCH DEMO FIX: Use much more permissive filtering
+        filters = []
         
-        if agent_specialization:
-            where_filter["agent_specialization"] = agent_specialization.value
+        # Only filter by agent_specialization if it's specified and not implementation
+        # This makes the filter much more permissive for demo purposes
+        if agent_specialization and agent_specialization != AgentSpecialization.IMPLEMENTATION:
+            filters.append({"agent_specialization": agent_specialization.value})
         
-        if content_type:
-            where_filter["content_type"] = content_type.value
+        # Skip content_type filter for demo - too restrictive
+        # if content_type:
+        #     filters.append({"content_type": content_type.value})
         
-        if difficulty_level:
-            where_filter["difficulty_level"] = difficulty_level
+        # Skip difficulty_level filter for demo - too restrictive
+        # if difficulty_level:
+        #     filters.append({"difficulty_level": difficulty_level})
         
-        # For programming concepts, we'd need to use a more complex filter
-        # ChromaDB supports array containment queries
-        if programming_concepts:
-            # Search for documents that contain any of the specified concepts
-            # Since programming_concepts is now stored as comma-separated string, 
-            # we'll search for the first concept as a substring
-            where_filter["programming_concepts"] = {"$contains": programming_concepts[0]}
+        # Skip programming concepts filter for demo - too restrictive
+        # if programming_concepts:
+        #     filters.append({"programming_concepts": {"$contains": programming_concepts[0]}})
         
-        return where_filter if where_filter else None
+        if not filters:
+            return None
+        elif len(filters) == 1:
+            return filters[0]
+        else:
+            return {"$and": filters}
     
     def _process_unified_search_results(self,
                                       results: Dict[str, Any],
@@ -685,32 +691,97 @@ class UnifiedEducationalVectorStore:
         """Process raw search results from unified collection."""
         processed_results = []
         
+        # DEBUG: Log the raw ChromaDB results structure
+        self.logger.log_event(
+            EventType.KNOWLEDGE_RETRIEVED,
+            "Processing raw ChromaDB search results",
+            extra_data={
+                "results_structure": {
+                    "ids_count": len(results.get('ids', [[]])[0]) if results.get('ids') else 0,
+                    "documents_count": len(results.get('documents', [[]])[0]) if results.get('documents') else 0,
+                    "metadatas_count": len(results.get('metadatas', [[]])[0]) if results.get('metadatas') else 0,
+                    "distances_count": len(results.get('distances', [[]])[0]) if results.get('distances') else 0,
+                    "has_metadatas": 'metadatas' in results and results['metadatas'] is not None,
+                    "metadatas_sample": results.get('metadatas', [[]])[0][:2] if results.get('metadatas') and results['metadatas'][0] else []
+                },
+                "similarity_threshold": similarity_threshold
+            }
+        )
+        
         if not results['ids'] or not results['ids'][0]:
+            self.logger.log_event(
+                EventType.KNOWLEDGE_RETRIEVED,
+                "No results returned from ChromaDB search",
+                extra_data={"raw_results": results}
+            )
             return processed_results
         
         for i, content_id in enumerate(results['ids'][0]):
-            # Calculate similarity score (ChromaDB returns distances, convert to similarity)
-            distance = results['distances'][0][i]
-            similarity_score = 1.0 - distance  # Convert distance to similarity
-            
-            if similarity_score < similarity_threshold:
+            try:
+                # Calculate similarity score (ChromaDB returns distances, convert to similarity)
+                distance = results['distances'][0][i]
+                similarity_score = 1.0 - distance  # Convert distance to similarity
+                
+                if similarity_score < similarity_threshold:
+                    continue
+                
+                # Extract content and metadata
+                content = results['documents'][0][i]
+                
+                # Safely extract metadata with multiple fallback levels
+                metadata = {}
+                if (results.get('metadatas') and 
+                    len(results['metadatas']) > 0 and 
+                    results['metadatas'][0] and 
+                    len(results['metadatas'][0]) > i):
+                    metadata = results['metadatas'][0][i] or {}
+                
+                safe_metadata = metadata or {}
+                
+                # DEBUG: Log the raw metadata structure
+                self.logger.log_event(
+                    EventType.KNOWLEDGE_RETRIEVED,
+                    f"Processing result {i}: content_id={content_id}",
+                    extra_data={
+                        "metadata_keys": list(safe_metadata.keys()),
+                        "metadata_sample": {k: str(v)[:100] for k, v in safe_metadata.items()},
+                        "metadata_type": type(metadata).__name__,
+                        "has_agent_specialization": "agent_specialization" in safe_metadata
+                    }
+                )
+                
+                # Handle programming_concepts - convert from string to list if needed
+                programming_concepts = safe_metadata.get('programming_concepts', [])
+                if isinstance(programming_concepts, str):
+                    programming_concepts = [c.strip() for c in programming_concepts.split(',') if c.strip()]
+                elif programming_concepts is None:
+                    programming_concepts = []
+                
+                # Create retrieval result with safe metadata access  
+                retrieval_result = RetrievalResult(
+                    content_id=content_id,
+                    content=content,
+                    similarity_score=similarity_score,
+                    metadata=safe_metadata,
+                    content_type=safe_metadata.get('content_type', 'general'),
+                    agent_specialization=safe_metadata.get('agent_specialization', 'shared'),
+                    programming_concepts=programming_concepts,
+                    difficulty_level=safe_metadata.get('difficulty_level', 'intermediate')
+                )
+                
+            except Exception as e:
+                # DEBUG: Log any errors in processing individual results
+                self.logger.log_event(
+                    EventType.ERROR_OCCURRED,
+                    f"Error processing search result {i}: {str(e)}",
+                    level="ERROR",
+                    extra_data={
+                        "content_id": content_id if 'content_id' in locals() else "unknown",
+                        "metadata": metadata if 'metadata' in locals() else {},
+                        "error_type": type(e).__name__
+                    }
+                )
                 continue
-            
-            # Extract content and metadata
-            content = results['documents'][0][i]
-            metadata = results['metadatas'][0][i] if results['metadatas'] else {}
-            
-            # Create retrieval result
-            retrieval_result = RetrievalResult(
-                content_id=content_id,
-                content=content,
-                similarity_score=similarity_score,
-                metadata=metadata,
-                content_type=metadata.get('content_type', 'general'),
-                agent_specialization=metadata.get('agent_specialization', 'shared'),
-                programming_concepts=metadata.get('programming_concepts', []),
-                difficulty_level=metadata.get('difficulty_level', 'intermediate')
-            )
             
             processed_results.append(retrieval_result)
         

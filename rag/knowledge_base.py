@@ -221,6 +221,9 @@ class UnifiedEducationalKnowledgeBase:
             "pdf_files_processed": 0
         }
         
+        # Auto-detect existing content and set status appropriately
+        self._auto_detect_existing_content()
+        
         self.logger.log_event(
             EventType.COMPONENT_INIT,
             "Unified educational knowledge base initialized",
@@ -228,9 +231,58 @@ class UnifiedEducationalKnowledgeBase:
                 "caching_enabled": self.config.enable_caching,
                 "cache_ttl": self.config.cache_ttl_seconds,
                 "max_results": self.config.default_max_results,
-                "pdf_directory": self.config.pdf_directory
+                "pdf_directory": self.config.pdf_directory,
+                "auto_detected_status": self.status.value
             }
         )
+    
+    def _auto_detect_existing_content(self):
+        """
+        Auto-detect existing content in the vector store and set appropriate status.
+        
+        This method checks if there's already content in the vector store and sets
+        the knowledge base status to READY if content is found, avoiding the need
+        to re-initialize when content already exists.
+        """
+        try:
+            # Get vector store statistics to check for existing content
+            vector_stats = self.vector_store.get_vector_store_stats()
+            
+            if vector_stats.total_documents > 0:
+                # Content already exists, set status to READY
+                self.status = UnifiedKnowledgeBaseStatus.READY
+                self.component_stats["content_pieces_loaded"] = vector_stats.total_documents
+                
+                # Estimate last_updated time (use current time as approximation)
+                self.last_updated = time.time()
+                
+                self.logger.log_event(
+                    EventType.COMPONENT_INIT,
+                    f"Auto-detected {vector_stats.total_documents} existing content pieces, setting status to READY",
+                    extra_data={
+                        "total_documents": vector_stats.total_documents,
+                        "content_by_type": vector_stats.content_by_type,
+                        "content_by_agent": vector_stats.content_by_agent,
+                        "auto_detection": True
+                    }
+                )
+            else:
+                # No content found, keep status as UNINITIALIZED
+                self.logger.log_event(
+                    EventType.COMPONENT_INIT,
+                    "No existing content detected, status remains UNINITIALIZED",
+                    extra_data={"auto_detection": True}
+                )
+                
+        except Exception as e:
+            # If auto-detection fails, log but don't crash
+            self.logger.log_event(
+                EventType.ERROR_OCCURRED,
+                f"Auto-detection of existing content failed: {str(e)}",
+                level="WARNING",
+                extra_data={"auto_detection": True}
+            )
+            # Keep status as UNINITIALIZED if detection fails
     
     def initialize_unified_knowledge_base(self, 
                                         force_reload: bool = False,
@@ -868,25 +920,70 @@ def retrieve_for_agent(query: str,
         Unified retrieval response
     """
     kb = get_knowledge_base()
+    logger = get_logger()
     
     context = context or {}
     
-    request = UnifiedRetrievalRequest(
-        query=query,
-        agent_type=agent_type,
-        srl_phase=srl_phase,
-        student_level=context.get("student_level"),
-        code_snippet=context.get("code_snippet"),
-        error_message=context.get("error_message"),
-        conversation_history=context.get("conversation_history"),
-        max_results=context.get("max_results", 5),
-        prefer_code_examples=context.get("prefer_code_examples", False),
-        programming_domain=context.get("programming_domain"),
-        learning_objectives=context.get("learning_objectives"),
-        content_type_preference=context.get("content_type_preference")
+    # DEBUG: Log the inputs
+    logger.log_event(
+        EventType.KNOWLEDGE_RETRIEVED,
+        "retrieve_for_agent called",
+        extra_data={
+            "query": query[:100],
+            "agent_type": agent_type,
+            "srl_phase": srl_phase,
+            "context_keys": list(context.keys()) if context else []
+        }
     )
     
-    return kb.retrieve_unified_knowledge(request)
+    try:
+        request = UnifiedRetrievalRequest(
+            query=query,
+            agent_type=agent_type,
+            srl_phase=srl_phase,
+            student_level=context.get("student_level"),
+            code_snippet=context.get("code_snippet"),
+            error_message=context.get("error_message"),
+            conversation_history=context.get("conversation_history"),
+            max_results=context.get("max_results", 5),
+            prefer_code_examples=context.get("prefer_code_examples", False),
+            programming_domain=context.get("programming_domain"),
+            learning_objectives=context.get("learning_objectives"),
+            content_type_preference=context.get("content_type_preference")
+        )
+        
+        # DEBUG: Log request creation success
+        logger.log_event(
+            EventType.KNOWLEDGE_RETRIEVED,
+            "UnifiedRetrievalRequest created successfully",
+            extra_data={"request_agent_type": request.agent_type}
+        )
+        
+        result = kb.retrieve_unified_knowledge(request)
+        
+        # DEBUG: Log result
+        logger.log_event(
+            EventType.KNOWLEDGE_RETRIEVED,
+            f"retrieve_for_agent completed: {len(result.results)} results",
+            extra_data={"results_count": len(result.results)}
+        )
+        
+        return result
+        
+    except Exception as e:
+        # DEBUG: Log the exact error
+        logger.log_event(
+            EventType.ERROR_OCCURRED,
+            f"retrieve_for_agent failed: {str(e)}",
+            level="ERROR",
+            extra_data={
+                "error_type": type(e).__name__,
+                "agent_type": agent_type,
+                "srl_phase": srl_phase,
+                "query_sample": query[:50] if query else None
+            }
+        )
+        raise
 
 
 def get_knowledge_base_stats() -> UnifiedKnowledgeBaseStats:
