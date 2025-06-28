@@ -19,7 +19,7 @@ from pathlib import Path
 import logging
 from datetime import datetime
 
-from evaluation.cs1qa_processor import CS1QAProcessor
+from data.cs1qa_processor import CS1QAProcessor
 from evaluation.performance_tests import PerformanceTester, LoadTestConfig
 
 # Configure logging

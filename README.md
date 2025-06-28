@@ -22,6 +22,11 @@ agentic_edu_rag/
 │   ├── performance_tests.py  # System performance testing
 │   └── metrics.py           # Evaluation metrics
 ├── data/                     # Educational content and datasets
+│   ├── cs1qa_processor.py   # ← CS1QA dataset processing
+│   ├── cs1qa/
+│   │   ├── raw/             # Original CS1QA files
+│   │   └── processed/       # SRL-labeled evaluation data
+│   └── pdfs/                # PDF documents
 ├── config/                   # System configuration
 ├── utils/                    # Utility functions
 └── main.py                  # Main application entry point
@@ -66,7 +71,7 @@ The `cs1qa_processor.py` module handles CS1QA dataset processing and SRL phase l
 
 #### Usage Example:
 ```python
-from evaluation.cs1qa_processor import CS1QAProcessor
+from data.cs1qa_processor import CS1QAProcessor
 import asyncio
 
 async def process_dataset():
@@ -176,7 +181,7 @@ RESPONSE_TIMEOUT=30
 1. **Dataset Preparation:**
    ```bash
    # Place CS1QA data in data/cs1qa/raw/
-   python -m evaluation.cs1qa_processor
+   python -m data.cs1qa_processor
    ```
 
 2. **System Training:**
