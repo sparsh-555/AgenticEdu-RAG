@@ -329,7 +329,8 @@ Focus on building debugging skills and understanding, not just solving immediate
             confidence=response_quality,
             educational_metadata=educational_metadata,
             rag_context=rag_context,
-            suggested_follow_up=follow_up_questions
+            suggested_follow_up=follow_up_questions,
+            processing_time_ms=0.0  # Will be updated by base agent
         )
     
     def _initialize_error_patterns(self) -> Dict[ErrorCategory, List[str]]:
