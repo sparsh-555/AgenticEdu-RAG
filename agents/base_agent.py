@@ -224,16 +224,22 @@ class BaseAgent(ABC):
         
         try:
             # Step 1: Validate input
+            self.logger.log_event(EventType.AGENT_INVOKED, "Starting agent input validation")
             self._validate_input(agent_input)
             
             # Step 2: Retrieve relevant context (Template Method delegation)
+            self.logger.log_event(EventType.AGENT_INVOKED, "Starting RAG context retrieval")
             rag_context = self._retrieve_context(agent_input) if self.enable_rag else None
             
             # Step 3: Generate base response
+            self.logger.log_event(EventType.AGENT_INVOKED, "Starting base response generation")
             base_response = self._generate_base_response(agent_input, rag_context)
+            self.logger.log_event(EventType.AGENT_RESPONSE, f"Base response generated, length: {len(base_response) if base_response else 0}")
             
             # Step 4: Process specialized response (Template Method delegation)
+            self.logger.log_event(EventType.AGENT_INVOKED, "Starting specialized response processing")
             response = self.process_specialized_response(agent_input, rag_context, base_response)
+            self.logger.log_event(EventType.AGENT_RESPONSE, f"Specialized response processed, type: {type(response)}")
             
             # Step 5: Add processing metadata
             processing_time = (time.time() - start_time) * 1000
@@ -418,21 +424,27 @@ class BaseAgent(ABC):
         messages.append({"role": "user", "content": user_message})
         
         # Generate response using OpenAI client
+        self.logger.log_event(EventType.LLM_REQUEST, "Calling OpenAI create_chat_completion")
         api_response = self.openai_client.create_chat_completion(
             messages=messages,
             context=agent_input.context
         )
+        
+        # Debug log the response
+        self.logger.log_event(EventType.LLM_RESPONSE, f"OpenAI response received, type: {type(api_response)}")
         
         # Safely extract content with additional error handling
         if api_response is None:
             raise RuntimeError("OpenAI client returned None response")
             
         if not hasattr(api_response, 'content'):
+            self.logger.log_event(EventType.ERROR_OCCURRED, f"OpenAI response missing content attribute. Available attributes: {dir(api_response)}", level="ERROR")
             raise RuntimeError("OpenAI response missing content attribute")
             
         if api_response.content is None:
             raise RuntimeError("OpenAI response content is None")
         
+        self.logger.log_event(EventType.LLM_RESPONSE, f"Content extracted successfully, length: {len(api_response.content)}")
         return api_response.content
     
     def _log_interaction(self, agent_input: AgentInput, response: AgentResponse):
@@ -456,8 +468,8 @@ class BaseAgent(ABC):
             f"Educational response generated",
             context=agent_input.context,
             extra_data={
-                "agent_type": self.get_agent_type().value,
-                "response_type": response.response_type.value,
+                "agent_type": self.get_agent_type().value if hasattr(self.get_agent_type(), 'value') else str(self.get_agent_type()),
+                "response_type": response.response_type.value if hasattr(response.response_type, 'value') else str(response.response_type),
                 "confidence": response.confidence,
                 "srl_phase": agent_input.srl_phase,
                 "student_level": agent_input.student_level,

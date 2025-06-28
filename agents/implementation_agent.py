@@ -243,52 +243,91 @@ Focus on building understanding and thinking skills, not just solving immediate 
         Returns:
             Enhanced AgentResponse with educational metadata
         """
-        # Detect domain and strategy
-        domain = self._detect_programming_domain(agent_input.query)
-        strategy = self._determine_implementation_strategy(agent_input)
+        try:
+            # Detect domain and strategy
+            self.logger.log_event(EventType.AGENT_INVOKED, "Detecting programming domain")
+            domain = self._detect_programming_domain(agent_input.query)
+            
+            self.logger.log_event(EventType.AGENT_INVOKED, "Determining implementation strategy")
+            strategy = self._determine_implementation_strategy(agent_input)
+            
+            # Assess response quality and educational value
+            self.logger.log_event(EventType.AGENT_INVOKED, "Assessing response quality")
+            response_quality = self._assess_response_quality(base_response)
+            
+            self.logger.log_event(EventType.AGENT_INVOKED, "Assessing educational value")
+            educational_value = self._assess_educational_value(base_response, agent_input)
+            
+            # Generate educational metadata
+            self.logger.log_event(EventType.AGENT_INVOKED, "Identifying concepts covered")
+            concepts_covered = self._identify_concepts_covered(agent_input.query, base_response)
+            
+            self.logger.log_event(EventType.AGENT_INVOKED, "Generating learning objectives")
+            learning_objectives = self._generate_learning_objectives(strategy, concepts_covered)
+            
+            # Create suggested follow-up questions
+            self.logger.log_event(EventType.AGENT_INVOKED, "Generating follow-up questions")
+            follow_up_questions = self._generate_follow_up_questions(agent_input, strategy, domain)
+            
+            self.logger.log_event(EventType.AGENT_INVOKED, "All assessment methods completed successfully")
+        except Exception as e:
+            # Log the specific error location
+            import traceback
+            self.logger.log_event(
+                EventType.AGENT_ERROR, 
+                f"Error in specialized response processing: {str(e)}", 
+                level="ERROR",
+                extra_data={"traceback": traceback.format_exc()}
+            )
+            raise
         
-        # Assess response quality and educational value
-        response_quality = self._assess_response_quality(base_response)
-        educational_value = self._assess_educational_value(base_response, agent_input)
-        
-        # Generate educational metadata
-        concepts_covered = self._identify_concepts_covered(agent_input.query, base_response)
-        learning_objectives = self._generate_learning_objectives(strategy, concepts_covered)
-        
-        # Create suggested follow-up questions
-        follow_up_questions = self._generate_follow_up_questions(agent_input, strategy, domain)
-        
-        # Build comprehensive educational metadata
-        educational_metadata = self.create_educational_metadata(
-            agent_input=agent_input,
-            confidence=response_quality,
-            concepts_covered=concepts_covered,
-            learning_objectives=learning_objectives
-        )
-        
-        # Add implementation-specific metadata
-        educational_metadata.update({
-            "implementation_strategy": strategy.value,
-            "programming_domain": domain.value,
-            "educational_value_score": educational_value,
-            "promotes_strategic_thinking": self._promotes_strategic_thinking(base_response),
-            "encourages_decomposition": self._encourages_decomposition(base_response),
-            "socratic_elements": self._has_socratic_elements(base_response),
-            "complexity_appropriate": self._is_complexity_appropriate(base_response, agent_input.student_level)
-        })
-        
-        # Determine response type based on strategy
-        response_type = self._determine_response_type(strategy)
-        
-        return AgentResponse(
-            content=base_response,
-            response_type=response_type,
-            agent_type=self.get_agent_type(),
-            confidence=response_quality,
-            educational_metadata=educational_metadata,
-            rag_context=rag_context,
-            suggested_follow_up=follow_up_questions
-        )
+        try:
+            # Build comprehensive educational metadata
+            self.logger.log_event(EventType.AGENT_INVOKED, "Creating educational metadata")
+            educational_metadata = self.create_educational_metadata(
+                agent_input=agent_input,
+                confidence=response_quality,
+                concepts_covered=concepts_covered,
+                learning_objectives=learning_objectives
+            )
+            
+            # Add implementation-specific metadata
+            self.logger.log_event(EventType.AGENT_INVOKED, "Adding implementation-specific metadata")
+            educational_metadata.update({
+                "implementation_strategy": strategy.value,
+                "programming_domain": domain.value,
+                "educational_value_score": educational_value,
+                "promotes_strategic_thinking": self._promotes_strategic_thinking(base_response),
+                "encourages_decomposition": self._encourages_decomposition(base_response),
+                "socratic_elements": self._has_socratic_elements(base_response),
+                "complexity_appropriate": self._is_complexity_appropriate(base_response, agent_input.student_level)
+            })
+            
+            # Determine response type based on strategy
+            self.logger.log_event(EventType.AGENT_INVOKED, "Determining response type")
+            response_type = self._determine_response_type(strategy)
+            
+            self.logger.log_event(EventType.AGENT_INVOKED, "Creating AgentResponse object")
+            return AgentResponse(
+                content=base_response,
+                response_type=response_type,
+                agent_type=self.get_agent_type(),
+                confidence=response_quality,
+                educational_metadata=educational_metadata,
+                rag_context=rag_context,
+                suggested_follow_up=follow_up_questions,
+                processing_time_ms=0.0  # Will be updated by base agent
+            )
+        except Exception as e:
+            # Log the specific error location
+            import traceback
+            self.logger.log_event(
+                EventType.AGENT_ERROR, 
+                f"Error in metadata creation or response construction: {str(e)}", 
+                level="ERROR",
+                extra_data={"traceback": traceback.format_exc()}
+            )
+            raise
     
     def _initialize_domain_patterns(self) -> Dict[ProgrammingDomain, List[str]]:
         """Initialize patterns for programming domain detection."""

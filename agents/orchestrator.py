@@ -515,22 +515,29 @@ class OrchestratorAgent:
             if agent_response is None:
                 raise ValueError(f"{agent_name} agent returned None response")
             
-            # Store agent response in state
+            # Store agent response in state with safe enum access
+            response_type = agent_response.response_type.value if hasattr(agent_response.response_type, 'value') else str(agent_response.response_type)
+            agent_type = agent_response.agent_type.value if hasattr(agent_response.agent_type, 'value') else str(agent_response.agent_type)
+            
             state["agent_response"] = {
                 "content": agent_response.content,
-                "response_type": agent_response.response_type.value,
-                "agent_type": agent_response.agent_type.value,
+                "response_type": response_type,
+                "agent_type": agent_type,
                 "confidence": agent_response.confidence,
                 "educational_metadata": agent_response.educational_metadata,
                 "suggested_follow_up": agent_response.suggested_follow_up,
                 "processing_time_ms": (time.time() - agent_start) * 1000
             }
             
+            self.logger.log_event(EventType.AGENT_RESPONSE, f"Agent response stored in state successfully")
+            
             self.logger.log_agent_interaction(
                 agent_type=agent_name,
                 action="response_generated",
                 context=None
             )
+            
+            self.logger.log_event(EventType.AGENT_RESPONSE, f"Agent interaction logged successfully")
             
         except Exception as e:
             state["error_occurred"] = True
@@ -539,6 +546,10 @@ class OrchestratorAgent:
             # Add detailed debug information
             import traceback
             error_trace = traceback.format_exc()
+            
+            # Log with traceback visible in console
+            print(f"TRACEBACK for {agent_name} agent error:")
+            print(error_trace)
             
             self.logger.log_event(
                 EventType.AGENT_ERROR,
@@ -557,7 +568,10 @@ class OrchestratorAgent:
         """Perform quality assurance checks on the agent response."""
         state["workflow_stage"] = WorkflowStage.QUALITY_ASSURANCE.value
         
+        self.logger.log_event(EventType.SYSTEM_START, "Starting quality assurance node")
+        
         if not self.config.enable_quality_checks:
+            self.logger.log_event(EventType.SYSTEM_START, "Quality checks disabled, skipping")
             return state
         
         if not state["agent_response"]:
@@ -566,8 +580,10 @@ class OrchestratorAgent:
             return state
         
         try:
+            self.logger.log_event(EventType.SYSTEM_START, "Performing quality checks")
             quality_checks = self._perform_quality_checks(state)
             state["quality_checks"] = quality_checks
+            self.logger.log_event(EventType.SYSTEM_START, f"Quality checks completed: {quality_checks.get('overall_passed', False)}")
             
             # If quality checks fail and we haven't retried yet
             if not quality_checks["overall_passed"] and not state.get("quality_retry_attempted"):
@@ -686,11 +702,18 @@ class OrchestratorAgent:
         content = agent_response.get("content", "") if agent_response else ""
         confidence = agent_response.get("confidence", 0.0) if agent_response else 0.0
         
+        # Get valid response types safely
+        valid_response_types = []
+        try:
+            valid_response_types = [rt.value if hasattr(rt, 'value') else str(rt) for rt in ResponseType]
+        except Exception:
+            valid_response_types = ["guidance", "explanation", "code_example", "debugging"]  # fallback
+        
         checks = {
             "content_length_ok": len(content) > 50,
             "confidence_adequate": confidence > 0.3,
             "educational_metadata_present": bool(agent_response.get("educational_metadata")) if agent_response else False,
-            "response_type_valid": agent_response.get("response_type") in [rt.value for rt in ResponseType] if agent_response else False,
+            "response_type_valid": agent_response.get("response_type") in valid_response_types if agent_response else False,
             "processing_time_reasonable": agent_response.get("processing_time_ms", 0) < 25000 if agent_response else False
         }
         
