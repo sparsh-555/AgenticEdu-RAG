@@ -120,7 +120,7 @@ class BaseAgent(ABC):
     """
     
     def __init__(self, 
-                 openai_client: Optional[OpenAI] = None,
+                 openai_client: Optional[OpenAIClient] = None,
                  rag_system = None,  # Will be properly typed when RAG system is implemented
                  enable_rag: bool = True):
         """
