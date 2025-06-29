@@ -424,30 +424,83 @@ class UnifiedEducationalRetriever:
         """
         filters = {}
         
-        # Agent specialization filter
+        # DEBUGGING: Log input context details
+        self.logger.log_event(
+            EventType.KNOWLEDGE_RETRIEVED,
+            "Building metadata filters - INPUT CONTEXT",
+            extra_data={
+                "agent_specialization": context.agent_specialization,
+                "student_level": context.student_level,
+                "content_type_preference": context.content_type_preference,
+                "srl_phase": context.srl_phase,
+                "prefer_code_examples": context.prefer_code_examples,
+                "prefer_error_examples": context.prefer_error_examples,
+                "query": context.query[:100]
+            }
+        )
+        
+        # Agent specialization filter - RESEARCH FIX: Don't filter at this level for better research demo
+        # The agent specialization will be handled through scoring/ranking rather than hard filtering
         if context.agent_specialization:
-            filters['agent_specialization'] = context.agent_specialization
+            self.logger.log_event(
+                EventType.KNOWLEDGE_RETRIEVED,
+                f"RESEARCH: Agent specialization noted for scoring (not filtering): {context.agent_specialization}"
+            )
+            # Don't add to filters - let scoring system handle preference
         
-        # Difficulty level filter
+        # Difficulty level filter - RESEARCH FIX: Make this a preference rather than hard filter
         if context.student_level:
-            filters['difficulty_level'] = context.student_level
+            self.logger.log_event(
+                EventType.KNOWLEDGE_RETRIEVED,
+                f"RESEARCH: Difficulty level noted for scoring (not hard filtering): {context.student_level}"
+            )
+            # Don't add strict difficulty filter - let scoring system prefer appropriate levels
         
-        # Content type filter based on SRL phase or preference
+        # Content type filter - RESEARCH FIX: Use as preference for scoring, not hard filter
         if context.content_type_preference:
-            filters['content_type'] = context.content_type_preference
+            self.logger.log_event(
+                EventType.KNOWLEDGE_RETRIEVED,
+                f"RESEARCH: Content type preference noted for scoring: {context.content_type_preference}"
+            )
+            # Don't add hard filter - let scoring system prefer the type
         elif context.srl_phase:
             if context.srl_phase == SRLPhase.FORETHOUGHT.value:
-                filters['content_type'] = ContentType.IMPLEMENTATION_GUIDE.value
+                self.logger.log_event(
+                    EventType.KNOWLEDGE_RETRIEVED,
+                    f"RESEARCH: SRL phase (forethought) noted - will prefer implementation content in scoring"
+                )
             elif context.srl_phase == SRLPhase.PERFORMANCE.value:
-                filters['content_type'] = ContentType.DEBUGGING_RESOURCE.value
+                self.logger.log_event(
+                    EventType.KNOWLEDGE_RETRIEVED,
+                    f"RESEARCH: SRL phase (performance) noted - will prefer debugging content in scoring"
+                )
         
-        # Code examples preference
+        # Code examples preference - RESEARCH FIX: Use as scoring preference
         if context.prefer_code_examples:
-            filters['has_code_examples'] = True
+            self.logger.log_event(
+                EventType.KNOWLEDGE_RETRIEVED,
+                "RESEARCH: Code examples preference noted for scoring (not hard filtering)"
+            )
+            # Don't require code examples - let scoring system prefer them
         
-        # Error examples preference
+        # Error examples preference - RESEARCH FIX: Use as scoring preference  
         if context.prefer_error_examples:
-            filters['has_error_examples'] = True
+            self.logger.log_event(
+                EventType.KNOWLEDGE_RETRIEVED,
+                "RESEARCH: Error examples preference noted for scoring (not hard filtering)"
+            )
+            # Don't require error examples - let scoring system prefer them
+        
+        # DEBUGGING: Log final filter set
+        self.logger.log_event(
+            EventType.KNOWLEDGE_RETRIEVED,
+            "FINAL METADATA FILTERS BUILT",
+            extra_data={
+                "filters_applied": filters,
+                "filter_count": len(filters),
+                "query_context": context.query[:100]
+            }
+        )
         
         return filters
     
@@ -523,13 +576,14 @@ class UnifiedEducationalRetriever:
         if filters.get('content_type'):
             content_type = ContentType(filters['content_type'])
         
+        # RESEARCH FIX: Remove all restrictive filtering for better research demonstration
         return self.vector_store.search_similar_content(
             query=query,
-            agent_specialization=agent_spec,
-            content_type_filter=content_type,
-            difficulty_level=filters.get('difficulty_level'),
-            max_results=context.max_results * 2,  # Get more for ranking
-            similarity_threshold=context.similarity_threshold
+            agent_specialization=None,  # Don't filter by agent - let scoring handle preference
+            content_type_filter=None,   # Don't filter by content type - get diverse results
+            difficulty_level=None,      # Don't filter by difficulty - let scoring handle preference
+            max_results=max(context.max_results * 6, 15),  # Get many more for research demo
+            similarity_threshold=0.0    # Very low threshold to get broad set of candidates
         )
     
     def _agent_specialized_unified_retrieval(self, 
@@ -578,13 +632,14 @@ class UnifiedEducationalRetriever:
                 EventType.KNOWLEDGE_RETRIEVED,
                 f"Calling vector_store.search_similar_content with agent_spec: {agent_spec.value}"
             )
+            # RESEARCH FIX: Remove restrictive filtering for better research demonstration  
             results = self.vector_store.search_similar_content(
                 query=query,
-                agent_specialization=agent_spec,
-                content_type_filter=content_type_filter,
-                difficulty_level=filters.get('difficulty_level'),
-                max_results=context.max_results * 3,
-                similarity_threshold=context.similarity_threshold
+                agent_specialization=None,  # Don't filter by agent - get all relevant content
+                content_type_filter=None,   # Don't filter by content type - let scoring prefer
+                difficulty_level=None,      # Don't filter by difficulty - let scoring prefer
+                max_results=max(context.max_results * 6, 15),  # Get many more for research demo
+                similarity_threshold=0.0    # Very low threshold for broad candidate set
             )
             self.logger.log_event(
                 EventType.KNOWLEDGE_RETRIEVED,
@@ -925,30 +980,112 @@ class UnifiedEducationalRetriever:
                                           scored_results: List[UnifiedScoredResult],
                                           context: UnifiedRetrievalContext) -> List[UnifiedScoredResult]:
         """Apply advanced contextual filtering for unified results."""
+        # DEBUGGING: Log input for contextual filtering
+        self.logger.log_event(
+            EventType.KNOWLEDGE_RETRIEVED,
+            "CONTEXTUAL FILTERING - BEFORE",
+            extra_data={
+                "input_results_count": len(scored_results),
+                "similarity_threshold": context.similarity_threshold,
+                "query": context.query[:100]
+            }
+        )
+        
         # RESEARCH DEMO FIX: Make filtering much more permissive to demonstrate RAG functionality
         filtered_results = []
+        similarity_failures = 0
+        quality_failures = 0 
+        relevance_failures = 0
         
-        for scored_result in scored_results:
+        for i, scored_result in enumerate(scored_results):
+            result_id = scored_result.result.content_id
+            
             # Very permissive similarity threshold for demo
-            if scored_result.similarity_score < max(0.01, context.similarity_threshold):
+            similarity_threshold = max(0.01, context.similarity_threshold)
+            if scored_result.similarity_score < similarity_threshold:
+                similarity_failures += 1
+                self.logger.log_event(
+                    EventType.KNOWLEDGE_RETRIEVED,
+                    f"FILTERED OUT - Similarity too low: {result_id}",
+                    extra_data={
+                        "similarity_score": scored_result.similarity_score,
+                        "threshold": similarity_threshold,
+                        "result_position": i
+                    }
+                )
                 continue
             
             # Much more permissive quality threshold for demo
-            if scored_result.quality_score < 0.1:  # Reduced from 0.3
+            quality_threshold = 0.1  # Reduced from 0.3
+            if scored_result.quality_score < quality_threshold:
+                quality_failures += 1
+                self.logger.log_event(
+                    EventType.KNOWLEDGE_RETRIEVED,
+                    f"FILTERED OUT - Quality too low: {result_id}",
+                    extra_data={
+                        "quality_score": scored_result.quality_score,
+                        "threshold": quality_threshold,
+                        "result_position": i
+                    }
+                )
                 continue
             
             # Much more permissive educational relevance for demo  
-            if scored_result.educational_relevance_score < 0.05:  # Reduced from 0.2
+            relevance_threshold = 0.05  # Reduced from 0.2
+            if scored_result.educational_relevance_score < relevance_threshold:
+                relevance_failures += 1
+                self.logger.log_event(
+                    EventType.KNOWLEDGE_RETRIEVED,
+                    f"FILTERED OUT - Educational relevance too low: {result_id}",
+                    extra_data={
+                        "educational_relevance_score": scored_result.educational_relevance_score,
+                        "threshold": relevance_threshold,
+                        "result_position": i
+                    }
+                )
                 continue
             
             # Always pass context filters for demo purposes
+            self.logger.log_event(
+                EventType.KNOWLEDGE_RETRIEVED,
+                f"PASSED ALL FILTERS: {result_id}",
+                extra_data={
+                    "similarity_score": scored_result.similarity_score,
+                    "quality_score": scored_result.quality_score,
+                    "educational_relevance_score": scored_result.educational_relevance_score,
+                    "combined_score": scored_result.combined_score,
+                    "result_position": i
+                }
+            )
             filtered_results.append(scored_result)
         
         # If still no results, return top results anyway for demo
         if not filtered_results and scored_results:
+            self.logger.log_event(
+                EventType.KNOWLEDGE_RETRIEVED,
+                "NO RESULTS PASSED FILTERS - Falling back to top similarity results",
+                extra_data={
+                    "original_count": len(scored_results),
+                    "fallback_count": min(3, len(scored_results))
+                }
+            )
             # Sort by similarity and take top results
             sorted_results = sorted(scored_results, key=lambda x: x.similarity_score, reverse=True)
             filtered_results = sorted_results[:min(3, len(sorted_results))]
+        
+        # DEBUGGING: Log final filtering results
+        self.logger.log_event(
+            EventType.KNOWLEDGE_RETRIEVED,
+            "RESEARCH CONTEXTUAL FILTERING - RESULTS",
+            extra_data={
+                "input_count": len(scored_results),
+                "tier_1_count": len([r for r in scored_results if r.similarity_score >= 0.3 and r.quality_score >= 0.4]),
+                "tier_2_count": len([r for r in scored_results if r.similarity_score >= 0.1 and r.quality_score >= 0.2]),
+                "tier_3_count": len([r for r in scored_results if r.similarity_score >= 0.05 and r.quality_score >= 0.1]),
+                "final_output_count": len(filtered_results),
+                "approach": "research_permissive_filtering"
+            }
+        )
         
         return filtered_results
     

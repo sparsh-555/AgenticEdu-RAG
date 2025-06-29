@@ -373,6 +373,21 @@ class UnifiedEducationalVectorStore:
                 return cached_result
         
         try:
+            # DEBUGGING: Log search parameters
+            self.logger.log_event(
+                EventType.KNOWLEDGE_RETRIEVED,
+                "VECTOR STORE SEARCH - Starting search",
+                extra_data={
+                    "query": query[:100],
+                    "agent_specialization": agent_specialization.value if agent_specialization else None,
+                    "content_type_filter": content_type_filter.value if content_type_filter else None,
+                    "difficulty_level": difficulty_level,
+                    "programming_concepts": programming_concepts,
+                    "max_results": max_results,
+                    "similarity_threshold": similarity_threshold
+                }
+            )
+            
             # Generate query embedding
             query_embedding = self._generate_embedding(query)
             
@@ -381,11 +396,36 @@ class UnifiedEducationalVectorStore:
                 agent_specialization, content_type_filter, difficulty_level, programming_concepts
             )
             
+            # DEBUGGING: Log the metadata filter being applied
+            self.logger.log_event(
+                EventType.KNOWLEDGE_RETRIEVED,
+                "VECTOR STORE SEARCH - Metadata filter built",
+                extra_data={
+                    "where_filter": where_filter,
+                    "has_filter": where_filter is not None,
+                    "filter_keys": list(where_filter.keys()) if where_filter else []
+                }
+            )
+            
             # Perform similarity search on unified collection
+            # RESEARCH FIX: Get more results to ensure good candidates after filtering
+            search_count = max(max_results * 4, 15)  # Get significantly more for research demo
             results = self.collection.query(
                 query_embeddings=[query_embedding],
-                n_results=max_results * 2,  # Get more to filter and rank
+                n_results=search_count,
                 where=where_filter if where_filter else None
+            )
+            
+            # DEBUGGING: Log raw database results
+            raw_count = len(results['ids'][0]) if results['ids'] and results['ids'][0] else 0
+            self.logger.log_event(
+                EventType.KNOWLEDGE_RETRIEVED,
+                "VECTOR STORE SEARCH - Raw database results",
+                extra_data={
+                    "raw_results_count": raw_count,
+                    "requested_n_results": max_results * 2,
+                    "has_results": raw_count > 0
+                }
             )
             
             # Process results
@@ -393,9 +433,31 @@ class UnifiedEducationalVectorStore:
                 results, similarity_threshold
             )
             
+            # DEBUGGING: Log after processing
+            self.logger.log_event(
+                EventType.KNOWLEDGE_RETRIEVED,
+                "VECTOR STORE SEARCH - After processing",
+                extra_data={
+                    "processed_results_count": len(processed_results),
+                    "similarity_threshold": similarity_threshold,
+                    "filtered_by_similarity": raw_count - len(processed_results)
+                }
+            )
+            
             # Sort by similarity and limit results
             processed_results.sort(key=lambda x: x.similarity_score, reverse=True)
             final_results = processed_results[:max_results]
+            
+            # DEBUGGING: Log final results
+            self.logger.log_event(
+                EventType.KNOWLEDGE_RETRIEVED,
+                "VECTOR STORE SEARCH - Final results",
+                extra_data={
+                    "final_results_count": len(final_results),
+                    "max_results_requested": max_results,
+                    "top_similarity_scores": [r.similarity_score for r in final_results[:3]]
+                }
+            )
             
             # Update usage statistics
             self._update_content_usage_stats(final_results)
@@ -657,33 +719,126 @@ class UnifiedEducationalVectorStore:
                                      content_type: Optional[ContentType],
                                      difficulty_level: Optional[str],
                                      programming_concepts: Optional[List[str]]) -> Optional[Dict[str, Any]]:
-        """Build metadata filter for unified collection search."""
-        # RESEARCH DEMO FIX: Use much more permissive filtering
+        """Build metadata filter for unified collection search using research-appropriate tiered filtering."""
+        # DEBUGGING: Log input parameters
+        self.logger.log_event(
+            EventType.KNOWLEDGE_RETRIEVED,
+            "BUILDING METADATA FILTER - Input parameters",
+            extra_data={
+                "agent_specialization": agent_specialization.value if agent_specialization else None,
+                "content_type": content_type.value if content_type else None,
+                "difficulty_level": difficulty_level,
+                "programming_concepts": programming_concepts
+            }
+        )
+        
+        # RESEARCH FIX: Use tiered filtering approach for better research demonstration
+        # Tier 1: Prefer agent-specific content but allow shared content
+        # Tier 2: Allow adjacent difficulty levels  
+        # Tier 3: No hard filtering to ensure minimum results
+        
         filters = []
         
-        # Only filter by agent_specialization if it's specified and not implementation
-        # This makes the filter much more permissive for demo purposes
-        if agent_specialization and agent_specialization != AgentSpecialization.IMPLEMENTATION:
-            filters.append({"agent_specialization": agent_specialization.value})
+        # Agent specialization: Include target agent AND shared content
+        if agent_specialization:
+            # Allow both the specific agent content AND shared content
+            agent_filter = {
+                "$or": [
+                    {"agent_specialization": agent_specialization.value},
+                    {"agent_specialization": AgentSpecialization.SHARED.value}
+                ]
+            }
+            filters.append(agent_filter)
+            self.logger.log_event(
+                EventType.KNOWLEDGE_RETRIEVED,
+                "METADATA FILTER - Agent specialization filter added (including shared)",
+                extra_data={"filter": agent_filter}
+            )
         
-        # Skip content_type filter for demo - too restrictive
-        # if content_type:
-        #     filters.append({"content_type": content_type.value})
+        # Content type: Only filter if very specific request, otherwise allow all educational content
+        if content_type and content_type in [ContentType.DEBUGGING_RESOURCE, ContentType.IMPLEMENTATION_GUIDE]:
+            # Only apply strict content type filtering for very specific requests
+            filters.append({"content_type": content_type.value})
+            self.logger.log_event(
+                EventType.KNOWLEDGE_RETRIEVED,
+                "METADATA FILTER - Content type filter added (specific request)",
+                extra_data={"content_type": content_type.value}
+            )
+        elif content_type:
+            self.logger.log_event(
+                EventType.KNOWLEDGE_RETRIEVED,
+                "METADATA FILTER - Content type not filtered (allowing educational variety)",
+                extra_data={"requested_type": content_type.value}
+            )
         
-        # Skip difficulty_level filter for demo - too restrictive
-        # if difficulty_level:
-        #     filters.append({"difficulty_level": difficulty_level})
+        # Difficulty level: Use adjacent levels for more inclusive filtering  
+        if difficulty_level:
+            difficulty_mapping = {
+                "beginner": ["beginner", "intermediate"],
+                "intermediate": ["beginner", "intermediate", "advanced"], 
+                "advanced": ["intermediate", "advanced"]
+            }
+            allowed_levels = difficulty_mapping.get(difficulty_level, [difficulty_level])
+            
+            if len(allowed_levels) > 1:
+                difficulty_filter = {"difficulty_level": {"$in": allowed_levels}}
+                filters.append(difficulty_filter)
+                self.logger.log_event(
+                    EventType.KNOWLEDGE_RETRIEVED,
+                    "METADATA FILTER - Difficulty level filter added (inclusive)",
+                    extra_data={"allowed_levels": allowed_levels}
+                )
+            else:
+                self.logger.log_event(
+                    EventType.KNOWLEDGE_RETRIEVED,
+                    "METADATA FILTER - Single difficulty level, allowing broader content"
+                )
         
-        # Skip programming concepts filter for demo - too restrictive
-        # if programming_concepts:
-        #     filters.append({"programming_concepts": {"$contains": programming_concepts[0]}})
+        # Programming concepts: Only filter if we have very specific concepts
+        if programming_concepts and len(programming_concepts) <= 2:
+            # Only filter on concepts if we have 1-2 specific ones
+            concept_filter = {
+                "$or": [
+                    {"programming_concepts": {"$regex": f".*{concept}.*"}}
+                    for concept in programming_concepts[:2]
+                ]
+            }
+            filters.append(concept_filter)
+            self.logger.log_event(
+                EventType.KNOWLEDGE_RETRIEVED,
+                "METADATA FILTER - Programming concepts filter added",
+                extra_data={"concepts": programming_concepts[:2]}
+            )
+        elif programming_concepts:
+            self.logger.log_event(
+                EventType.KNOWLEDGE_RETRIEVED,
+                "METADATA FILTER - Too many concepts, allowing broader content",
+                extra_data={"concept_count": len(programming_concepts)}
+            )
         
+        # Build final filter - use OR logic for more inclusive results
+        final_filter = None
         if not filters:
-            return None
+            final_filter = None  # No filtering - get best similarity matches
         elif len(filters) == 1:
-            return filters[0]
+            final_filter = filters[0]
         else:
-            return {"$and": filters}
+            # Use OR logic between different filter types for more inclusive results
+            final_filter = {"$or": filters}
+        
+        # DEBUGGING: Log final filter
+        self.logger.log_event(
+            EventType.KNOWLEDGE_RETRIEVED,
+            "RESEARCH METADATA FILTER - Final filter built",
+            extra_data={
+                "final_filter": final_filter,
+                "filter_count": len(filters),
+                "is_inclusive": True,
+                "approach": "tiered_research_filtering"
+            }
+        )
+        
+        return final_filter
     
     def _process_unified_search_results(self,
                                       results: Dict[str, Any],
