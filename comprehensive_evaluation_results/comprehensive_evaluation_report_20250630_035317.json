@@ -1,0 +1,134 @@
+{
+  "evaluation_metadata": {
+    "timestamp": "2025-06-30T03:53:17.138698",
+    "duration_minutes": 394.79439826666663,
+    "cs1qa_data_source": "cs1qa_full_processed/cs1qa_srl_labeled_with_ground_truth.json"
+  },
+  "routing_accuracy": {
+    "routing_accuracy": {
+      "overall_accuracy": 0.916080129940444,
+      "implementation_precision": 0.9496951219512195,
+      "implementation_recall": 0.9333333333333333,
+      "implementation_f1": 0.9414431431809596,
+      "debugging_precision": 0.8336448598130841,
+      "debugging_recall": 0.87109375,
+      "debugging_f1": 0.8519579751671442
+    },
+    "confusion_matrix": {
+      "matrix": [
+        [
+          1246,
+          89
+        ],
+        [
+          66,
+          446
+        ]
+      ],
+      "labels": [
+        "implementation",
+        "debugging"
+      ],
+      "true_positives": {
+        "implementation": 1246,
+        "debugging": 446
+      },
+      "false_positives": {
+        "implementation": 66,
+        "debugging": 89
+      }
+    },
+    "system_performance": {
+      "total_queries_attempted": 1847,
+      "successful_queries": 1847,
+      "failed_queries": 0,
+      "success_rate": 1.0,
+      "avg_processing_time_ms": 12147.643634942944,
+      "avg_confidence": 0.8754412560909584
+    },
+    "phase_distribution": {
+      "ground_truth": {
+        "implementation": 1335,
+        "debugging": 512
+      },
+      "predictions": {
+        "implementation": 1312,
+        "debugging": 535
+      },
+      "distribution_match": false
+    },
+    "detailed_classification_report": {
+      "implementation": {
+        "precision": 0.9496951219512195,
+        "recall": 0.9333333333333333,
+        "f1-score": 0.9414431431809596,
+        "support": 1335.0
+      },
+      "debugging": {
+        "precision": 0.8336448598130841,
+        "recall": 0.87109375,
+        "f1-score": 0.8519579751671442,
+        "support": 512.0
+      },
+      "accuracy": 0.916080129940444,
+      "macro avg": {
+        "precision": 0.8916699908821518,
+        "recall": 0.9022135416666667,
+        "f1-score": 0.8967005591740519,
+        "support": 1847.0
+      },
+      "weighted avg": {
+        "precision": 0.9175252604381035,
+        "recall": 0.916080129940444,
+        "f1-score": 0.9166372925999778,
+        "support": 1847.0
+      }
+    },
+    "failed_queries": []
+  },
+  "performance_metrics": {
+    "test_summary": {
+      "timestamp": "2025-06-30T03:53:17.133087",
+      "tests_conducted": [
+        "response_time",
+        "concurrency",
+        "scalability"
+      ],
+      "total_test_duration": "N/A"
+    },
+    "response_time_analysis": {
+      "average_response_times": {
+        "implementation_medium": 3.7580146581982263,
+        "implementation_easy": 4.588879149791319,
+        "implementation_hard": 5.35339010838652,
+        "debugging_easy": 3.6909931335947475,
+        "debugging_medium": 5.785363374988083,
+        "debugging_hard": 6.793546124990098
+      },
+      "fastest_query_type": "debugging_easy",
+      "slowest_query_type": "debugging_hard",
+      "meets_target_3s": false
+    },
+    "concurrency_analysis": {
+      "max_concurrent_users_tested": 7,
+      "optimal_concurrency_level": 7,
+      "error_rate_progression": {
+        "1": 0.0,
+        "3": 0.0,
+        "5": 0.0,
+        "7": 0.0
+      },
+      "throughput_peak": 1.1355708567405383
+    },
+    "scalability_analysis": {},
+    "api_usage_analysis": {},
+    "recommendations": [
+      "Response times exceed 3s target. Consider optimizing RAG retrieval or using faster models."
+    ]
+  },
+  "research_criteria_assessment": {
+    "routing_accuracy_target_80_percent": true,
+    "response_time_target_3_seconds": false,
+    "system_stability": true
+  }
+}

@@ -1,0 +1,40 @@
+{
+  "test_summary": {
+    "timestamp": "2025-06-30T04:58:08.577476",
+    "tests_conducted": [
+      "response_time",
+      "concurrency",
+      "scalability"
+    ],
+    "total_test_duration": "N/A"
+  },
+  "response_time_analysis": {
+    "average_response_times": {
+      "implementation_medium": 3.7735201248084196,
+      "implementation_easy": 3.9410238417796792,
+      "implementation_hard": 4.667621841805522,
+      "debugging_easy": 3.321203200216405,
+      "debugging_medium": 5.271601683390327,
+      "debugging_hard": 4.748156300000846
+    },
+    "fastest_query_type": "debugging_easy",
+    "slowest_query_type": "debugging_medium",
+    "meets_target_3s": false
+  },
+  "concurrency_analysis": {
+    "max_concurrent_users_tested": 7,
+    "optimal_concurrency_level": 7,
+    "error_rate_progression": {
+      "1": 0.0,
+      "3": 0.0,
+      "5": 0.0,
+      "7": 0.0
+    },
+    "throughput_peak": 1.1973869596157924
+  },
+  "scalability_analysis": {},
+  "api_usage_analysis": {},
+  "recommendations": [
+    "Response times exceed 3s target. Consider optimizing RAG retrieval or using faster models."
+  ]
+}

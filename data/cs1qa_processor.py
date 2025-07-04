@@ -329,6 +329,17 @@ Respond with JSON:
                 message = response.choices[0].message
                 if hasattr(message, 'content') and message.content:
                     response_text = message.content
+                    
+                    # Strip markdown code blocks if present
+                    response_text = response_text.strip()
+                    if response_text.startswith('```json'):
+                        response_text = response_text[7:]  # Remove ```json
+                    if response_text.startswith('```'):
+                        response_text = response_text[3:]   # Remove ``` 
+                    if response_text.endswith('```'):
+                        response_text = response_text[:-3]  # Remove closing ```
+                    response_text = response_text.strip()
+                    
                 else:
                     raise ValueError("OpenAI response missing content")
                 classification_result = json.loads(response_text)

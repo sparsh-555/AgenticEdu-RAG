@@ -81,7 +81,7 @@ CLASSIFICATION_EXAMPLES = [
         "indicators": ["best approach", "strategy planning", "efficiency consideration", "pre-implementation"]
     },
     {
-        "query": "Why does my recursive function cause a stack overflow error?",
+        "query": "Why doesn't my recursive function work correctly?",
         "context": {
             "code_snippet": "def factorial(n):\n    return n * factorial(n-1)",
             "error_message": "RecursionError: maximum recursion depth exceeded",
@@ -89,8 +89,20 @@ CLASSIFICATION_EXAMPLES = [
         },
         "classification": "PERFORMANCE",
         "confidence": 0.94,
-        "reasoning": "Student has implemented code that's causing runtime errors. This is performance phase self-monitoring and error correction.",
-        "indicators": ["runtime error", "stack overflow", "existing implementation", "error diagnosis"]
+        "reasoning": "Student has implemented code that's causing runtime errors. 'Why doesn't it work' with error message indicates debugging needs.",
+        "indicators": ["doesn't work", "runtime error", "existing broken code", "error diagnosis"]
+    },
+    {
+        "query": "Why is recursion used in this factorial implementation?",
+        "context": {
+            "code_snippet": "def factorial(n):\n    if n <= 1:\n        return 1\n    return n * factorial(n-1)",
+            "error_message": None,
+            "student_level": "intermediate"
+        },
+        "classification": "FORETHOUGHT",
+        "confidence": 0.92,
+        "reasoning": "Student is asking about design rationale of working code. 'Why is X used' indicates conceptual understanding, not debugging.",
+        "indicators": ["why is used", "design rationale", "working code", "conceptual understanding"]
     },
     {
         "query": "How should I structure my classes for this object-oriented design problem?",
@@ -138,15 +150,27 @@ def _get_standard_prompt() -> str:
     """Standard SRL classification prompt with clear instructions."""
     return """You are an expert educational AI that classifies student programming queries based on Self-Regulated Learning (SRL) phases. Your task is to determine whether a query represents:
 
-**FORETHOUGHT PHASE**: Students planning, strategizing, and preparing to implement solutions
-- Characteristics: "How do I...", "What's the best approach...", "How should I design...", "What algorithm should I use..."
-- Focus: Planning, strategy selection, goal setting, pre-implementation thinking
+**FORETHOUGHT PHASE**: Students planning, strategizing, and seeking understanding before/during implementation
+- IMPLEMENTATION PLANNING: "How do I...", "What's the best approach...", "How should I design...", "What algorithm should I use..."
+- CONCEPTUAL UNDERSTANDING: "Please explain why...", "Why is X used here...", "What does this mean...", "How does X work..."
+- LEARNING QUESTIONS: Asking about working code to understand concepts, design decisions, or approaches
+- Focus: Planning, strategy selection, goal setting, conceptual learning
 - Route to: Implementation Agent
 
-**PERFORMANCE PHASE**: Students monitoring, debugging, and correcting existing work
-- Characteristics: Error messages, "My code doesn't work...", "I'm getting...", "Why does my code..."
-- Focus: Self-monitoring, error correction, debugging, performance adjustment
+**PERFORMANCE PHASE**: Students monitoring, debugging, and correcting existing broken/malfunctioning work
+- ERROR TROUBLESHOOTING: "My code doesn't work...", "I'm getting an error...", "Why doesn't my code work..."
+- RUNTIME ISSUES: Actual error messages, exceptions, crashes, infinite loops, wrong outputs
+- DEBUGGING ACTIVITIES: "How do I fix...", "What's wrong with...", "My code is broken..."
+- Focus: Error correction, debugging, fixing malfunctioning code
 - Route to: Debugging Agent
+
+**CRITICAL DISTINCTIONS:**
+- "Why is X used?" (working code explanation) → FORETHOUGHT
+- "Why doesn't X work?" (broken code debugging) → PERFORMANCE
+- "Explain this approach" (conceptual learning) → FORETHOUGHT
+- "Fix this error" (troubleshooting) → PERFORMANCE
+- Code snippets for reference/explanation → FORETHOUGHT
+- Code snippets with errors/problems → PERFORMANCE
 
 Analyze the student query and respond with a JSON object containing:
 {
@@ -157,11 +181,10 @@ Analyze the student query and respond with a JSON object containing:
 }
 
 Consider:
-- Keywords and phrases that indicate planning vs. debugging
-- Presence of code snippets (suggests performance phase)
-- Error messages (strongly indicate performance phase)
-- Question structure and intent
-- Student's current situation (planning vs. executing)
+- Is the student asking about working code (FORETHOUGHT) or broken code (PERFORMANCE)?
+- Is this conceptual understanding or error troubleshooting?
+- Are there actual error messages or runtime issues?
+- Is the intent learning/planning or fixing/debugging?
 
 Provide your analysis as a valid JSON object only."""
 
@@ -205,23 +228,23 @@ def _get_domain_specific_prompt(domain: str = "general") -> str:
     
     domain_contexts = {
         "algorithms": {
-            "forethought_indicators": ["algorithm design", "approach", "complexity", "optimization", "strategy"],
-            "performance_indicators": ["runtime error", "wrong output", "infinite loop", "performance issue"],
+            "forethought_indicators": ["algorithm design", "approach", "complexity", "optimization", "strategy", "explain why", "how does"],
+            "performance_indicators": ["runtime error", "wrong output", "infinite loop", "doesn't work", "algorithm fails"],
             "examples": "algorithm implementation, sorting efficiency, search strategies"
         },
         "data_structures": {
-            "forethought_indicators": ["structure choice", "design", "which data structure", "organize data"],
-            "performance_indicators": ["memory error", "access issue", "insertion problem", "data corruption"],
+            "forethought_indicators": ["structure choice", "design", "which data structure", "organize data", "explain implementation"],
+            "performance_indicators": ["memory error", "access issue", "insertion problem", "data corruption", "structure broken"],
             "examples": "array vs linked list choice, tree traversal design, hash table implementation"
         },
         "object_oriented": {
-            "forethought_indicators": ["class design", "inheritance", "architecture", "design pattern"],
-            "performance_indicators": ["method error", "attribute error", "inheritance issue", "polymorphism bug"],
+            "forethought_indicators": ["class design", "inheritance", "architecture", "design pattern", "why use"],
+            "performance_indicators": ["method error", "attribute error", "inheritance issue", "polymorphism bug", "class not working"],
             "examples": "class hierarchy design, method organization, encapsulation decisions"
         },
         "web_development": {
-            "forethought_indicators": ["architecture", "framework choice", "API design", "project structure"],
-            "performance_indicators": ["HTTP error", "routing issue", "database error", "frontend bug"],
+            "forethought_indicators": ["architecture", "framework choice", "API design", "project structure", "explain approach"],
+            "performance_indicators": ["HTTP error", "routing issue", "database error", "frontend bug", "server not responding"],
             "examples": "REST API design, component structure, database schema planning"
         }
     }
@@ -230,24 +253,30 @@ def _get_domain_specific_prompt(domain: str = "general") -> str:
     
     return f"""You are an expert educational AI specializing in {domain} programming education. Classify student queries based on Self-Regulated Learning phases.
 
+**CRITICAL DISTINCTION:**
+- "Why is X used?" / "Explain this approach" → FORETHOUGHT (learning about working code)
+- "Why doesn't X work?" / "Fix this error" → PERFORMANCE (debugging broken code)
+
 **DOMAIN CONTEXT: {domain.title()}**
 - Forethought indicators: {', '.join(context['forethought_indicators'])}
 - Performance indicators: {', '.join(context['performance_indicators'])}
 - Common examples: {context['examples']}
 
 **FORETHOUGHT PHASE** (→ Implementation Agent):
-Students planning and designing {domain} solutions before implementation.
-Examples: "How should I design...", "What's the best {domain} approach...", "Which structure should I use..."
+- Planning and designing {domain} solutions before implementation
+- Understanding working code and design decisions
+- Examples: "How should I design...", "Why is this approach used...", "Explain this {domain} concept..."
 
 **PERFORMANCE PHASE** (→ Debugging Agent):
-Students debugging and fixing existing {domain} code.
-Examples: Error messages, "My {domain} code doesn't...", "Why is my implementation..."
+- Debugging and fixing broken {domain} code
+- Troubleshooting runtime errors and malfunctions
+- Examples: Error messages, "My {domain} code doesn't work...", "Why is my implementation failing..."
 
 Classify the query considering {domain}-specific patterns and respond with JSON:
 {{
     "classification": "FORETHOUGHT" or "PERFORMANCE",
     "confidence": float between 0.0 and 1.0,
-    "reasoning": "Explanation focusing on {domain} context",
+    "reasoning": "Explanation focusing on {domain} context and working vs broken code distinction",
     "indicators": ["domain-specific", "indicators", "found"]
 }}"""
 

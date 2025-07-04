@@ -1,0 +1,32 @@
+{
+  "processing_summary": {
+    "total_queries_loaded": 1847,
+    "total_queries_processed": 1847,
+    "processing_success_rate": 1.0,
+    "high_confidence_samples": 1847,
+    "ground_truth_rate": 1.0,
+    "average_confidence": 0.8808067135896048
+  },
+  "phase_distribution": {
+    "ground_truth_labels": {
+      "implementation": 1335,
+      "debugging": 512
+    },
+    "all_predictions": {
+      "implementation": 1335,
+      "debugging": 512
+    }
+  },
+  "confidence_analysis": {
+    "mean": 0.8808067135896048,
+    "min": 0.7,
+    "max": 0.95,
+    "high_confidence_threshold": 0.7,
+    "high_confidence_count": 1847
+  },
+  "output_files": {
+    "final_dataset": "cs1qa_full_processed/cs1qa_srl_labeled_with_ground_truth.json",
+    "total_records": 1847,
+    "ground_truth_records": 1847
+  }
+}
